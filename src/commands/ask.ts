@@ -1,6 +1,6 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
-import type { ChatMessage } from '../types/llm.js';
+import type { ChatMessage, LLMProvider } from '../types/llm.js';
 import type { Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -8,19 +8,12 @@ import { UsageError } from '../errors/base.js';
 import { streamChat } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
 import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
+import { renderMarkdown } from '../output/markdown.js';
 
-/**
- * streamChat 工厂对象
- * 用于测试时注入 mock
- */
 export const streamChatFactory = {
   call: streamChat,
 };
 
-/**
- * session store 工厂对象
- * 用于测试时注入 mock（特别是 getOrCreateActiveSession）
- */
 export const storeFactory = {
   getSession,
   getOrCreateActiveSession,
@@ -106,12 +99,15 @@ export const askCommand: Command = {
     
     // 8. 调用 streamChat
     let fullReply = '';
+    
     try {
-      fullReply = await streamChatFactory.call(provider, messages, (content) => {
-        partialReply += content;
-        process.stdout.write(content);
+      process.stderr.write('思考中...\n');
+      
+      fullReply = await streamChatFactory.call(provider, messages, () => {
       }, { timeout, verbose });
-      process.stdout.write('\n');
+      
+      const rendered = renderMarkdown(fullReply);
+      process.stdout.write(rendered + '\n');
     } catch (e) {
       if (verbose) {
         process.stderr.write(`[DEBUG] Error details: ${(e as Error).stack}\n`);

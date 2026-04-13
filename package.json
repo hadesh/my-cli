@@ -1,22 +1,8 @@
 {
-  "name": "my-cli",
-  "version": "0.1.0",
-  "description": "A minimal CLI scaffold",
-  "type": "module",
-  "scripts": {
-    "dev": "bun src/main.ts",
-    "build": "bun build src/main.ts --outfile dist/main.js --target node",
-    "lint": "eslint src --ext .ts",
-    "test": "bun test"
-  },
-  "bin": {
-    "my-cli": "./dist/main.js"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.5",
-    "@types/node": "^20.14.0"
-  },
   "dependencies": {
-    "zod": "^3.23.8"
+    "chalk": "^5.6.2",
+    "marked": "15",
+    "marked-terminal": "^7.3.0",
+    "zod": "^4.3.6"
   }
 }
