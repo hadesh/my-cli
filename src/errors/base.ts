@@ -46,3 +46,10 @@ export class HttpError extends NetworkError {
     this.body = body;
   }
 }
+
+export class LLMError extends CLIError {
+  constructor(message: string) {
+    super(message, ExitCode.LLM);
+    this.name = 'LLMError';
+  }
+}

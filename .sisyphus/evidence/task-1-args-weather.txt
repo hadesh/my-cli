@@ -1,0 +1,1 @@
+{"command":["weather"],"flags":{},"positional":["北京"]}

@@ -33,16 +33,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags[arg.slice(1)] = true;
     } else if (command.length === 0 && !arg.startsWith('-')) {
       command.push(arg);
-      // 继续收集子命令词（直到遇到 flag 或参数）
-      let j = i + 1;
-      while (j < argv.length && !argv[j]!.startsWith('-')) {
-        const next = argv[j]!;
-        // 如果下一个词看起来是值（含空格或数字），停止
-        if (/\s/.test(next)) break;
-        command.push(next);
-        j++;
-      }
-      i = j - 1;
     } else {
       positional.push(arg);
     }

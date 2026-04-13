@@ -10,6 +10,8 @@ export const configSchema = z.object({
   verbose: z.boolean().default(false),
   dryRun: z.boolean().default(false),
   nonInteractive: z.boolean().default(false),
+  contextWindow: z.number().default(20).optional(),
+  activeSessionId: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
