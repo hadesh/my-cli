@@ -5,10 +5,12 @@ import type { Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { UsageError } from '../errors/base.js';
-import { streamChat } from '../llm/client.js';
+import { streamChat, chatWithTools } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
 import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
 import { renderMarkdown } from '../output/markdown.js';
+import { loadTools } from '../tools/store.js';
+import { executeToolCommand } from '../tools/executor.js';
 
 export const streamChatFactory = {
   call: streamChat,
@@ -19,6 +21,18 @@ export const storeFactory = {
   getOrCreateActiveSession,
   updateSession,
   setActiveSessionId,
+};
+
+export const toolsStoreFactory = {
+  loadTools,
+};
+
+export const chatWithToolsFactory = {
+  call: chatWithTools,
+};
+
+export const executorFactory = {
+  execute: executeToolCommand,
 };
 
 export const askCommand: Command = {
@@ -83,8 +97,18 @@ export const askCommand: Command = {
       messages.push({ role: m.role, content: m.content });
     }
     messages.push({ role: 'user', content: message });
-    
-    // 7. SIGINT 处理（在 streamChat 调用前注册）
+
+    const allTools = toolsStoreFactory.loadTools();
+    const enabledTools = allTools.filter(t => t.enabled);
+    const toolDefs = enabledTools.map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      }
+    }));
+
     let partialReply = '';
     process.once('SIGINT', async () => {
       if (partialReply) {
@@ -96,16 +120,85 @@ export const askCommand: Command = {
       }
       process.exit(0);
     });
-    
-    // 8. 调用 streamChat
+
     let fullReply = '';
-    
+    const maxToolCalls = 10;
+
     try {
       process.stderr.write('思考中...\n');
-      
-      fullReply = await streamChatFactory.call(provider, messages, () => {
-      }, { timeout, verbose });
-      
+
+      if (enabledTools.length === 0) {
+        fullReply = await streamChatFactory.call(provider, messages, () => {
+        }, { timeout, verbose });
+      } else {
+        let toolCallCount = 0;
+        let lastResponseContent: string | null = null;
+
+        while (toolCallCount < maxToolCalls) {
+          const response = await chatWithToolsFactory.call(provider, messages, toolDefs, { timeout });
+          const choice = response.choices[0];
+          const assistantMessage = choice.message;
+
+          if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+            toolCallCount++;
+            lastResponseContent = assistantMessage.content ?? '';
+
+            messages.push({
+              role: 'assistant',
+              content: assistantMessage.content ?? '',
+              tool_calls: assistantMessage.tool_calls
+            });
+
+            for (const toolCall of assistantMessage.tool_calls) {
+              const toolName = toolCall.function.name;
+              const tool = enabledTools.find(t => t.name === toolName);
+
+              let result: string;
+              if (!tool) {
+                result = `工具 "${toolName}" 不存在`;
+              } else {
+                let argsObject: Record<string, string> = {};
+                try {
+                  const parsed = JSON.parse(toolCall.function.arguments);
+                  argsObject = Object.fromEntries(
+                    Object.entries(parsed).map(([k, v]) => [k, String(v)])
+                  );
+                } catch {
+                  argsObject = {};
+                }
+                result = await executorFactory.execute(tool.command, argsObject, 30000);
+              }
+
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: result
+              });
+            }
+          } else {
+            lastResponseContent = assistantMessage.content ?? '';
+
+            if (toolCallCount === 0) {
+              fullReply = await streamChatFactory.call(provider, messages, () => {
+              }, { timeout, verbose });
+            } else {
+              messages.push({
+                role: 'assistant',
+                content: assistantMessage.content ?? ''
+              });
+              fullReply = await streamChatFactory.call(provider, messages, () => {
+              }, { timeout, verbose });
+            }
+            break;
+          }
+
+          if (toolCallCount >= maxToolCalls) {
+            fullReply = lastResponseContent ?? '';
+            break;
+          }
+        }
+      }
+
       const rendered = renderMarkdown(fullReply);
       process.stdout.write(rendered + '\n');
     } catch (e) {
@@ -115,8 +208,7 @@ export const askCommand: Command = {
       process.stderr.write(`LLM 调用失败: ${(e as Error).message}\n`);
       return;
     }
-    
-    // 9. LLM 成功后才写盘
+
     const now = new Date().toISOString();
     session.messages.push({ role: 'user', content: message, timestamp: now });
     session.messages.push({ role: 'assistant', content: fullReply, timestamp: now });

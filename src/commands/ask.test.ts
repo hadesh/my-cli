@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { askCommand, streamChatFactory, storeFactory } from './ask.js';
+import { askCommand, streamChatFactory, storeFactory, toolsStoreFactory, chatWithToolsFactory, executorFactory } from './ask.js';
 import { CLIError, UsageError, LLMError } from '../errors/base.js';
 import { loadConfig } from '../config/loader.js';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -16,6 +16,9 @@ describe('askCommand', () => {
   let originalGetOrCreateActiveSession: typeof storeFactory.getOrCreateActiveSession;
   let originalUpdateSession: typeof storeFactory.updateSession;
   let originalSetActiveSessionId: typeof storeFactory.setActiveSessionId;
+  let originalLoadTools: typeof toolsStoreFactory.loadTools;
+  let originalChatWithTools: typeof chatWithToolsFactory.call;
+  let originalExecutorExecute: typeof executorFactory.execute;
 
   beforeEach(() => {
     tmpDir = `/tmp/my-cli-test-ask-${Math.random().toString(36).slice(2, 6)}`;
@@ -28,8 +31,10 @@ describe('askCommand', () => {
     originalGetOrCreateActiveSession = storeFactory.getOrCreateActiveSession;
     originalUpdateSession = storeFactory.updateSession;
     originalSetActiveSessionId = storeFactory.setActiveSessionId;
+    originalLoadTools = toolsStoreFactory.loadTools;
+    originalChatWithTools = chatWithToolsFactory.call;
+    originalExecutorExecute = executorFactory.execute;
 
-    // 设置基本 session 目录
     mkdirSync(join(tmpDir, '.config', 'my-cli', 'sessions'), { recursive: true });
   });
 
@@ -44,6 +49,9 @@ describe('askCommand', () => {
     storeFactory.getOrCreateActiveSession = originalGetOrCreateActiveSession;
     storeFactory.updateSession = originalUpdateSession;
     storeFactory.setActiveSessionId = originalSetActiveSessionId;
+    toolsStoreFactory.loadTools = originalLoadTools;
+    chatWithToolsFactory.call = originalChatWithTools;
+    executorFactory.execute = originalExecutorExecute;
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -308,5 +316,151 @@ describe('askCommand', () => {
 
     // 验证 updateSession 未被调用
     expect(updateSessionCalled).toBe(false);
+  });
+
+  // FC 测试 1：无工具时走原有 streamChat 路径
+  test('ask without tools uses streamChat path', async () => {
+    mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      JSON.stringify({
+        providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
+        defaultProvider: 'test',
+      })
+    );
+
+    // mock loadTools 返回空数组
+    toolsStoreFactory.loadTools = () => [];
+
+    let streamChatCalled = false;
+    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+      streamChatCalled = true;
+      return 'Hello without tools';
+    };
+
+    const config = { contextWindow: 20 } as Config;
+    await askCommand.execute(config, {}, ['Hello']);
+
+    expect(streamChatCalled).toBe(true);
+
+    // 验证 session 保存了消息
+    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const files = readdirSync(sessionsDir);
+    expect(files.length).toBe(1);
+    const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
+    expect(session.messages[1].role).toBe('assistant');
+    expect(session.messages[1].content).toBe('Hello without tools');
+  });
+
+  // FC 测试 2：有工具、LLM 一轮直接返回无 tool_calls
+  test('ask with tools but LLM returns no tool_calls uses streamChat', async () => {
+    mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      JSON.stringify({
+        providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
+        defaultProvider: 'test',
+      })
+    );
+
+    // mock 返回有工具但工具未调用
+    toolsStoreFactory.loadTools = () => [{
+      name: 'get_weather',
+      description: '获取天气',
+      enabled: true,
+      command: 'echo {{location}}',
+      parameters: { type: 'object', properties: { location: { type: 'string', description: '城市' } }, required: ['location'] }
+    }];
+
+    // mock chatWithTools 返回无 tool_calls
+    chatWithToolsFactory.call = async () => ({
+      choices: [{ message: { role: 'assistant', content: '直接回答' }, finish_reason: 'stop' }]
+    });
+
+    let streamChatCalled = false;
+    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+      streamChatCalled = true;
+      onChunk('Stream reply');
+      return 'Stream reply';
+    };
+
+    const config = { contextWindow: 20 } as Config;
+    await askCommand.execute(config, {}, ['Hello']);
+
+    expect(streamChatCalled).toBe(true);
+  });
+
+  // FC 测试 3：有工具、LLM 返回 tool_calls、执行后第二轮返回正常回复
+  test('ask with tools and tool_calls executes tool and continues', async () => {
+    mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      JSON.stringify({
+        providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
+        defaultProvider: 'test',
+      })
+    );
+
+    // mock 返回有工具
+    toolsStoreFactory.loadTools = () => [{
+      name: 'get_weather',
+      description: '获取天气',
+      enabled: true,
+      command: 'echo {{location}}',
+      parameters: { type: 'object', properties: { location: { type: 'string', description: '城市' } }, required: ['location'] }
+    }];
+
+    let chatWithToolsCallCount = 0;
+    chatWithToolsFactory.call = async () => {
+      chatWithToolsCallCount++;
+      if (chatWithToolsCallCount === 1) {
+        // 第一次返回有 tool_calls
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"location":"Beijing"}' } }]
+            },
+            finish_reason: 'tool_calls'
+          }]
+        };
+      } else {
+        // 第二次返回无 tool_calls
+        return {
+          choices: [{ message: { role: 'assistant', content: '北京天气晴朗' }, finish_reason: 'stop' }]
+        };
+      }
+    };
+
+    // mock 执行器
+    executorFactory.execute = async () => '晴天 25°C';
+
+    let streamChatCalled = false;
+    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+      streamChatCalled = true;
+      onChunk('北京天气晴朗');
+      return '北京天气晴朗';
+    };
+
+    const config = { contextWindow: 20 } as Config;
+    await askCommand.execute(config, {}, ['北京天气怎么样']);
+
+    // chatWithTools 应该被调用两次
+    expect(chatWithToolsCallCount).toBe(2);
+    // streamChat 应该被调用一次（最后一轮）
+    expect(streamChatCalled).toBe(true);
+
+    // 验证 session 只存了 user 和 assistant 消息
+    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const files = readdirSync(sessionsDir);
+    const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
+    expect(session.messages).toHaveLength(2);
+    expect(session.messages[0].role).toBe('user');
+    expect(session.messages[1].role).toBe('assistant');
+    expect(session.messages[1].content).toBe('北京天气晴朗');
+    // 确保 session 中没有 tool 或 tool_calls 消息
+    expect(session.messages.some((m: any) => m.role === 'tool')).toBe(false);
+    expect(session.messages.some((m: any) => m.tool_calls)).toBe(false);
   });
 });
