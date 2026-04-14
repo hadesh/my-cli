@@ -100,6 +100,12 @@ export const askCommand: Command = {
 
     const allTools = toolsStoreFactory.loadTools();
     const enabledTools = allTools.filter(t => t.enabled);
+    if (verbose) {
+      process.stderr.write(`[DEBUG] 已加载工具数量: ${allTools.length}，已启用: ${enabledTools.length}\n`);
+      for (const t of enabledTools) {
+        process.stderr.write(`[DEBUG] 工具: ${t.name} - ${t.description}\n`);
+      }
+    }
     const toolDefs = enabledTools.map(t => ({
       type: 'function' as const,
       function: {
@@ -108,6 +114,9 @@ export const askCommand: Command = {
         parameters: t.parameters,
       }
     }));
+    if (verbose && toolDefs.length > 0) {
+      process.stderr.write(`[DEBUG] toolDefs: ${JSON.stringify(toolDefs, null, 2)}\n`);
+    }
 
     let partialReply = '';
     process.once('SIGINT', async () => {
@@ -135,13 +144,21 @@ export const askCommand: Command = {
         let lastResponseContent: string | null = null;
 
         while (toolCallCount < maxToolCalls) {
-          const response = await chatWithToolsFactory.call(provider, messages, toolDefs, { timeout });
+          const response = await chatWithToolsFactory.call(provider, messages, toolDefs, { timeout, verbose });
           const choice = response.choices[0];
           const assistantMessage = choice.message;
+
+          if (verbose) {
+            process.stderr.write(`[DEBUG] chatWithTools 响应 tool_calls: ${JSON.stringify(assistantMessage.tool_calls ?? null)}\n`);
+            process.stderr.write(`[DEBUG] chatWithTools 响应 content: ${assistantMessage.content ?? '(空)'}\n`);
+          }
 
           if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
             toolCallCount++;
             lastResponseContent = assistantMessage.content ?? '';
+            if (verbose) {
+              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}\n`);
+            }
 
             messages.push({
               role: 'assistant',
@@ -166,7 +183,13 @@ export const askCommand: Command = {
                 } catch {
                   argsObject = {};
                 }
+                if (verbose) {
+                  process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
+                }
                 result = await executorFactory.execute(tool.command, argsObject, 30000);
+                if (verbose) {
+                  process.stderr.write(`[DEBUG] 工具 "${toolName}" 返回结果长度: ${result.length}\n`);
+                }
               }
 
               messages.push({

@@ -138,10 +138,18 @@ export async function chatWithTools(
   provider: LLMProvider,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  options?: { timeout?: number }
+  options?: { timeout?: number; verbose?: boolean }
 ): Promise<ChatResponse> {
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
+  const verbose = options?.verbose ?? false;
   const url = provider.baseUrl;
+
+  if (verbose) {
+    process.stderr.write(`[DEBUG] chatWithTools 请求 URL: ${url}\n`);
+    process.stderr.write(`[DEBUG] chatWithTools tools 数量: ${tools.length}\n`);
+    process.stderr.write(`[DEBUG] chatWithTools tools 名称: ${tools.map(t => t.function.name).join(', ')}\n`);
+    process.stderr.write(`[DEBUG] chatWithTools messages 数量: ${messages.length}\n`);
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -165,10 +173,20 @@ export async function chatWithTools(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      const body = await response.text();
+      if (verbose) {
+        process.stderr.write(`[DEBUG] chatWithTools HTTP ${response.status}: ${body}\n`);
+      }
       throw new LLMError(`LLM API 错误: HTTP ${response.status}`);
     }
 
-    return await response.json() as ChatResponse;
+    const result = await response.json() as ChatResponse;
+    if (verbose) {
+      const choice = result.choices?.[0];
+      process.stderr.write(`[DEBUG] chatWithTools finish_reason: ${choice?.finish_reason}\n`);
+      process.stderr.write(`[DEBUG] chatWithTools tool_calls: ${JSON.stringify(choice?.message?.tool_calls ?? null)}\n`);
+    }
+    return result;
   } catch (e) {
     clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {

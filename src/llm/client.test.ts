@@ -232,7 +232,8 @@ describe('chatWithTools', () => {
       Promise.resolve({
         ok: false,
         status: 401,
-      } as Response)
+        text: () => Promise.resolve('Unauthorized'),
+      } as unknown as Response)
     );
 
     const tools: ToolDefinition[] = [];
