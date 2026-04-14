@@ -10,6 +10,7 @@ import { sessionCommand } from './commands/session.js';
 import { llmCommand } from './commands/llm.js';
 import { initCommand } from './commands/init.js';
 import { askCommand } from './commands/ask.js';
+import { toolsCommand } from './commands/tools.js';
 
 const VERSION = '0.1.0';
 
@@ -20,6 +21,7 @@ registry.register(sessionCommand);
 registry.register(llmCommand);
 registry.register(initCommand);
 registry.register(askCommand);
+registry.register(toolsCommand);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
