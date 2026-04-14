@@ -1,9 +1,11 @@
 // OpenAI 兼容类型
-export type ChatRole = 'system' | 'user' | 'assistant'
+export type ChatRole = 'system' | 'user' | 'assistant' | 'tool'
 
 export interface ChatMessage {
   role: ChatRole
   content: string
+  tool_call_id?: string    // tool 消息专用（role === 'tool' 时使用）
+  tool_calls?: ToolCall[]  // assistant 消息专用（LLM 返回 tool_calls 时）
 }
 
 export interface ChatRequest {
@@ -33,4 +35,36 @@ export interface LLMProvider {
 export interface LLMConfig {
   providers: LLMProvider[]
   defaultProvider: string  // provider name
+}
+
+// Function Calling 扩展类型（Qwen 兼容）
+
+export interface ToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: object
+  }
+}
+
+export interface ToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string  // JSON 字符串
+  }
+}
+
+// 非流式 LLM 响应（用于 chatWithTools）
+export interface ChatResponse {
+  choices: Array<{
+    message: {
+      role: 'assistant'
+      content: string | null
+      tool_calls?: ToolCall[]
+    }
+    finish_reason: string
+  }>
 }
