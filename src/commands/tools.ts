@@ -71,7 +71,9 @@ async function handleList(): Promise<void> {
 
   for (const tool of tools) {
     const status = tool.enabled ? 'enabled' : 'disabled';
-    process.stdout.write(`[${status}] ${tool.name}: ${tool.description}\n`);
+    const builtin = tool.builtin ? ' [builtin]' : '';
+    process.stdout.write(`[${status}]${builtin} ${tool.name}: ${tool.description}\n`);
+    process.stdout.write(`  scriptPath: ${tool.scriptPath}\n`);
   }
 }
 
@@ -83,7 +85,7 @@ async function handleAdd(): Promise<void> {
     // 基本信息
     const name = await rl.question('工具名称: ');
     const description = await rl.question('工具描述: ');
-    const command = await rl.question('Shell 命令模板: ');
+    const scriptPath = await rl.question('JS/TS 脚本文件路径（绝对路径）: ');
     const paramCountStr = await rl.question('参数数量（整数）: ');
     const paramCount = parseInt(paramCountStr.trim(), 10);
 
@@ -127,7 +129,7 @@ async function handleAdd(): Promise<void> {
       name: name.trim(),
       description: description.trim(),
       enabled: true,
-      command: command.trim(),
+      scriptPath: scriptPath.trim(),
       parameters,
     };
 

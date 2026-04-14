@@ -10,7 +10,8 @@ export interface Tool {
   name: string           // 唯一标识，LLM 调用时使用
   description: string    // 工具功能描述，发给 LLM
   enabled: boolean       // 是否在 ask 中启用
-  command: string        // Shell 命令模板，如 "curl {{url}}"
+  scriptPath: string     // JS/TS 工具脚本文件绝对路径
+  builtin?: boolean      // true 表示内置工具，不可删除（只能 disable）
   parameters: ToolParameters
 }
 

@@ -186,7 +186,7 @@ export const askCommand: Command = {
                 if (verbose) {
                   process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
                 }
-                result = await executorFactory.execute(tool.command, argsObject, 30000);
+                result = await executorFactory.execute(tool.scriptPath, argsObject, 30000);
                 if (verbose) {
                   process.stderr.write(`[DEBUG] 工具 "${toolName}" 返回结果长度: ${result.length}\n`);
                 }
