@@ -1,5 +1,5 @@
 import { LLMError } from '../errors/base.js';
-import type { LLMProvider, ChatMessage, ChatChunk } from '../types/llm.js';
+import type { LLMProvider, ChatMessage, ChatChunk, ToolDefinition, ChatResponse } from '../types/llm.js';
 
 const DEFAULT_TIMEOUT = 30000;
 
@@ -125,6 +125,50 @@ export async function streamChat(
     }
 
     return fullReply;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as Error).name === 'AbortError') {
+      throw new LLMError('请求超时：连接建立超时');
+    }
+    throw e;
+  }
+}
+
+export async function chatWithTools(
+  provider: LLMProvider,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  options?: { timeout?: number }
+): Promise<ChatResponse> {
+  const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
+  const url = provider.baseUrl;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Authorization': `Bearer ${provider.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages,
+        tools,
+        stream: false,
+      }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new LLMError(`LLM API 错误: HTTP ${response.status}`);
+    }
+
+    return await response.json() as ChatResponse;
   } catch (e) {
     clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {

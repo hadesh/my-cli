@@ -1,7 +1,7 @@
 import { describe, it, expect, mock, beforeEach } from 'bun:test';
-import { streamChat } from './client.js';
+import { streamChat, chatWithTools } from './client.js';
 import { LLMError } from '../errors/base.js';
-import type { LLMProvider, ChatMessage } from '../types/llm.js';
+import type { LLMProvider, ChatMessage, ToolDefinition } from '../types/llm.js';
 
 const mockProvider: LLMProvider = {
   name: 'test',
@@ -150,5 +150,100 @@ describe('streamChat', () => {
 
     expect(result).toBe('Hello');
     expect(chunksReceived).toEqual(['Hello']);
+  });
+});
+
+describe('chatWithTools', () => {
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  it('正常非流式响应，返回 ChatResponse', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            choices: [
+              {
+                message: { role: 'assistant', content: '答案', tool_calls: undefined },
+                finish_reason: 'stop',
+              },
+            ],
+          }),
+      } as Response)
+    );
+
+    const tools: ToolDefinition[] = [];
+    const result = await chatWithTools(mockProvider, mockMessages, tools);
+    global.fetch = originalFetch;
+
+    expect(result.choices[0].message.content).toBe('答案');
+    expect(result.choices[0].finish_reason).toBe('stop');
+  });
+
+  it('返回 tool_calls，正确解析', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call_123',
+                      type: 'function',
+                      function: { name: 'get_weather', arguments: '{"city":"Beijing"}' },
+                    },
+                  ],
+                },
+                finish_reason: 'tool_calls',
+              },
+            ],
+          }),
+      } as Response)
+    );
+
+    const tools: ToolDefinition[] = [
+      {
+        type: 'function',
+        function: { name: 'get_weather', description: '获取天气', parameters: {} },
+      },
+    ];
+    const result = await chatWithTools(mockProvider, mockMessages, tools);
+    global.fetch = originalFetch;
+
+    expect(result.choices[0].message.tool_calls).toBeDefined();
+    expect(result.choices[0].message.tool_calls?.length).toBe(1);
+    expect(result.choices[0].message.tool_calls?.[0].function.name).toBe('get_weather');
+    expect(result.choices[0].message.tool_calls?.[0].function.arguments).toBe('{"city":"Beijing"}');
+  });
+
+  it('HTTP 401 错误，抛出 LLMError 含 401', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+      } as Response)
+    );
+
+    const tools: ToolDefinition[] = [];
+    try {
+      await chatWithTools(mockProvider, mockMessages, tools);
+      global.fetch = originalFetch;
+      expect.unreachable('应该抛出 LLMError');
+    } catch (error) {
+      global.fetch = originalFetch;
+      expect(error).toBeInstanceOf(LLMError);
+      expect((error as LLMError).message).toContain('401');
+    }
   });
 });
