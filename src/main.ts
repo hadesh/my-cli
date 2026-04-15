@@ -11,6 +11,7 @@ import { llmCommand } from './commands/llm.js';
 import { initCommand } from './commands/init.js';
 import { askCommand } from './commands/ask.js';
 import { toolsCommand } from './commands/tools.js';
+import { mcpCommand } from './commands/mcp.js';
 
 const VERSION = '0.1.0';
 
@@ -22,6 +23,7 @@ registry.register(llmCommand);
 registry.register(initCommand);
 registry.register(askCommand);
 registry.register(toolsCommand);
+registry.register(mcpCommand);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

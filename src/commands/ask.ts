@@ -9,8 +9,10 @@ import { streamChat, chatWithTools } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
 import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
 import { renderMarkdown } from '../output/markdown.js';
-import { loadTools } from '../tools/store.js';
-import { executeToolCommand } from '../tools/executor.js';
+import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
+import { closeRuntime } from '../mcp/client.js';
+import { countTokens, freeEncoder } from '../utils/tokenizer.js';
+import { calcContextStats, formatContextLine } from '../utils/context.js';
 
 export const streamChatFactory = {
   call: streamChat,
@@ -23,16 +25,8 @@ export const storeFactory = {
   setActiveSessionId,
 };
 
-export const toolsStoreFactory = {
-  loadTools,
-};
-
 export const chatWithToolsFactory = {
   call: chatWithTools,
-};
-
-export const executorFactory = {
-  execute: executeToolCommand,
 };
 
 export const askCommand: Command = {
@@ -67,7 +61,7 @@ export const askCommand: Command = {
       provider = await getDefaultProvider();
     }
     
-    // 3. 读取 agent.md（动态路径，不使用静态常量）
+    // 读取 agent.md
     const agentMdPath = join(process.env.HOME ?? homedir(), '.config', 'my-cli', 'agent.md');
     let agentMd = '';
     try {
@@ -76,7 +70,7 @@ export const askCommand: Command = {
       // 文件不存在，agentMd 保持空字符串
     }
     
-    // 4. 加载 session（仅读取，此时不写盘）
+    // 加载 session
     let session: Session;
     if (sessionId) {
       session = await storeFactory.getSession(sessionId);
@@ -84,11 +78,11 @@ export const askCommand: Command = {
       session = await storeFactory.getOrCreateActiveSession();
     }
     
-    // 5. 滑动窗口裁剪
+    // 滑动窗口裁剪
     const contextWindow = config.contextWindow ?? 20;
     const recentMessages = session.messages.slice(-contextWindow);
     
-    // 6. 构造 messages 数组
+    // 构造 messages 数组
     const messages: ChatMessage[] = [];
     if (agentMd) {
       messages.push({ role: 'system', content: agentMd });
@@ -98,15 +92,15 @@ export const askCommand: Command = {
     }
     messages.push({ role: 'user', content: message });
 
-    const allTools = toolsStoreFactory.loadTools();
-    const enabledTools = allTools.filter(t => t.enabled);
+    // 加载统一工具列表（内置 + MCP）
+    const tools = await getUnifiedToolDefs(config);
     if (verbose) {
-      process.stderr.write(`[DEBUG] 已加载工具数量: ${allTools.length}，已启用: ${enabledTools.length}\n`);
-      for (const t of enabledTools) {
-        process.stderr.write(`[DEBUG] 工具: ${t.name} - ${t.description}\n`);
+      process.stderr.write(`[DEBUG] 已加载工具数量: ${tools.length}\n`);
+      for (const t of tools) {
+        process.stderr.write(`[DEBUG] 工具: ${t.name} (${t.source}) - ${t.description}\n`);
       }
     }
-    const toolDefs = enabledTools.map(t => ({
+    const toolDefs = tools.map(t => ({
       type: 'function' as const,
       function: {
         name: t.name,
@@ -136,7 +130,7 @@ export const askCommand: Command = {
     try {
       process.stderr.write('思考中...\n');
 
-      if (enabledTools.length === 0) {
+      if (tools.length === 0) {
         fullReply = await streamChatFactory.call(provider, messages, () => {
         }, { timeout, verbose });
       } else {
@@ -168,28 +162,23 @@ export const askCommand: Command = {
 
             for (const toolCall of assistantMessage.tool_calls) {
               const toolName = toolCall.function.name;
-              const tool = enabledTools.find(t => t.name === toolName);
-
               let result: string;
-              if (!tool) {
-                result = `工具 "${toolName}" 不存在`;
-              } else {
-                let argsObject: Record<string, string> = {};
-                try {
-                  const parsed = JSON.parse(toolCall.function.arguments);
-                  argsObject = Object.fromEntries(
-                    Object.entries(parsed).map(([k, v]) => [k, String(v)])
-                  );
-                } catch {
-                  argsObject = {};
-                }
-                if (verbose) {
-                  process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
-                }
-                result = await executorFactory.execute(tool.scriptPath, argsObject, 30000);
-                if (verbose) {
-                  process.stderr.write(`[DEBUG] 工具 "${toolName}" 返回结果长度: ${result.length}\n`);
-                }
+              let argsObject: Record<string, unknown> = {};
+              try {
+                argsObject = JSON.parse(toolCall.function.arguments);
+              } catch {
+                argsObject = {};
+              }
+              if (verbose) {
+                process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
+              }
+              try {
+                result = await executeUnifiedTool(toolName, argsObject);
+              } catch (e) {
+                result = `工具 "${toolName}" 执行失败: ${(e as Error).message}`;
+              }
+              if (verbose) {
+                process.stderr.write(`[DEBUG] 工具 "${toolName}" 返回结果长度: ${result.length}\n`);
               }
 
               messages.push({
@@ -224,12 +213,20 @@ export const askCommand: Command = {
 
       const rendered = renderMarkdown(fullReply);
       process.stdout.write(rendered + '\n');
+
+      const allTexts = messages.map(m => m.content ?? '');
+      allTexts.push(fullReply);
+      const stats = await calcContextStats(allTexts, config);
+      freeEncoder();
+      process.stderr.write(`\n${formatContextLine(stats)}\n`);
     } catch (e) {
       if (verbose) {
         process.stderr.write(`[DEBUG] Error details: ${(e as Error).stack}\n`);
       }
       process.stderr.write(`LLM 调用失败: ${(e as Error).message}\n`);
       return;
+    } finally {
+      await closeRuntime();
     }
 
     const now = new Date().toISOString();

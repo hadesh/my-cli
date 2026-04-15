@@ -3,6 +3,8 @@
     "chalk": "^5.6.2",
     "marked": "15",
     "marked-terminal": "^7.3.0",
+    "mcporter": "^0.8.1",
+    "tiktoken": "^1.0.22",
     "zod": "^4.3.6"
   }
 }
