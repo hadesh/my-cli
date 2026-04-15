@@ -1,141 +1,99 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, rmSync } from 'node:fs';
-import { loadTools, saveTools, addTool, updateTool, deleteTool } from './store.js';
-import type { Tool } from '../types/tool.js';
+import { describe, test, expect } from 'bun:test';
+import {
+  getAllBuiltinDefs,
+  getEnabledBuiltinDefs,
+  getBuiltinExecutor,
+  getUnifiedToolDefs,
+  executeUnifiedTool,
+} from './store.js';
+import type { Config } from '../config/schema.js';
 
-const originalHome = process.env.HOME;
-
-let tmpDir: string;
-
-const mockTool: Tool = {
-  name: 'test_tool',
-  description: '测试工具',
-  enabled: true,
-  scriptPath: '/tmp/test_tool.ts',
-  parameters: {
-    type: 'object',
-    properties: {
-      message: { type: 'string', description: '消息内容' }
-    },
-    required: ['message']
-  }
-};
-
-beforeEach(() => {
-  tmpDir = `/tmp/my-cli-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  mkdirSync(tmpDir, { recursive: true });
-  process.env.HOME = tmpDir;
+// Mock Config
+const createConfig = (builtinTools?: Record<string, boolean>): Config => ({
+  model: 'test-model',
+  contextWindow: 20,
+  builtinTools: builtinTools ?? {},
 });
 
-afterEach(() => {
-  process.env.HOME = originalHome;
-  rmSync(tmpDir, { recursive: true, force: true });
-});
-
-describe('Tools Store', () => {
-  test('loadTools includes builtin weather tool', () => {
-    const tools = loadTools();
-    const weather = tools.find(t => t.name === 'weather');
+describe('getAllBuiltinDefs', () => {
+  test('返回包含 weather 的列表', () => {
+    const defs = getAllBuiltinDefs();
+    expect(defs.length).toBeGreaterThan(0);
+    const weather = defs.find(d => d.name === 'weather');
     expect(weather).toBeDefined();
-    expect(weather?.builtin).toBe(true);
-    expect(weather?.enabled).toBe(true);
+    expect(weather?.description).toContain('天气');
+  });
+});
+
+describe('getEnabledBuiltinDefs', () => {
+  test('builtinTools 为空时默认返回 weather', () => {
+    const config = createConfig();
+    const defs = getEnabledBuiltinDefs(config);
+    const weather = defs.find(d => d.name === 'weather');
+    expect(weather).toBeDefined();
   });
 
-  test('loadTools returns builtin + custom tools', async () => {
-    await saveTools([mockTool]);
-    const tools = loadTools();
-    expect(tools.find(t => t.name === 'weather')).toBeDefined();
-    expect(tools.find(t => t.name === 'test_tool')).toBeDefined();
+  test('builtinTools.weather = false 时不返回 weather', () => {
+    const config = createConfig({ weather: false });
+    const defs = getEnabledBuiltinDefs(config);
+    const weather = defs.find(d => d.name === 'weather');
+    expect(weather).toBeUndefined();
   });
 
-  test('loadTools parses custom tool scriptPath correctly', async () => {
-    await saveTools([mockTool]);
-    const tools = loadTools();
-    const tool = tools.find(t => t.name === 'test_tool');
-    expect(tool?.scriptPath).toBe('/tmp/test_tool.ts');
+  test('builtinTools.weather = true 时返回 weather', () => {
+    const config = createConfig({ weather: true });
+    const defs = getEnabledBuiltinDefs(config);
+    const weather = defs.find(d => d.name === 'weather');
+    expect(weather).toBeDefined();
+  });
+});
+
+describe('getBuiltinExecutor', () => {
+  test('getBuiltinExecutor("weather") 返回非 undefined', () => {
+    const executor = getBuiltinExecutor('weather');
+    expect(executor).toBeDefined();
+    expect(executor?.execute).toBeFunction();
   });
 
-  test('addTool successfully adds custom tool', async () => {
-    await addTool(mockTool);
-    const tools = loadTools();
-    expect(tools.find(t => t.name === 'test_tool')).toBeDefined();
+  test('getBuiltinExecutor("nonexistent") 返回 undefined', () => {
+    const executor = getBuiltinExecutor('nonexistent');
+    expect(executor).toBeUndefined();
   });
+});
 
-  test('addTool throws when name already exists', async () => {
-    await addTool(mockTool);
+describe('executeUnifiedTool', () => {
+  test('executeUnifiedTool("weather", { city: "Beijing" }) 返回字符串', async () => {
+    const result = await executeUnifiedTool('weather', { city: 'Beijing' });
+    expect(typeof result).toBe('string');
+    const parsed = JSON.parse(result);
+    expect(parsed.city).toBeDefined();
+    expect(parsed.temperature_c).toBeDefined();
+  }, { timeout: 30000 });
+
+  test('executeUnifiedTool("nonexistent") 抛出异常', async () => {
     try {
-      await addTool(mockTool);
+      await executeUnifiedTool('nonexistent', {});
       expect(true).toBe(false);
     } catch (error) {
-      expect((error as Error).message).toContain('已存在');
+      expect((error as Error).message).toBeDefined();
     }
   });
+});
 
-  test('addTool throws when trying to add tool with builtin name', async () => {
-    const duplicateBuiltin: Tool = {
-      ...mockTool,
-      name: 'weather',
-      scriptPath: '/tmp/fake-weather.ts',
-    };
-    try {
-      await addTool(duplicateBuiltin);
-      expect(true).toBe(false);
-    } catch (error) {
-      expect((error as Error).message).toContain('已存在');
-    }
+describe('getUnifiedToolDefs', () => {
+  test('返回内置工具（MCP 连接失败时降级）', async () => {
+    const config = createConfig();
+    const defs = await getUnifiedToolDefs(config);
+    expect(defs.length).toBeGreaterThan(0);
+    const weather = defs.find(d => d.name === 'weather');
+    expect(weather).toBeDefined();
+    expect(weather?.source).toBe('builtin');
   });
 
-  test('updateTool updates custom tool correctly', async () => {
-    await addTool(mockTool);
-    await updateTool('test_tool', { description: '更新后的描述', enabled: false });
-    const tools = loadTools();
-    const tool = tools.find(t => t.name === 'test_tool');
-    expect(tool?.description).toBe('更新后的描述');
-    expect(tool?.enabled).toBe(false);
-  });
-
-  test('updateTool can disable builtin tool', async () => {
-    await updateTool('weather', { enabled: false });
-    const tools = loadTools();
-    const weather = tools.find(t => t.name === 'weather');
-    expect(weather?.enabled).toBe(false);
-    expect(weather?.builtin).toBe(true);
-  });
-
-  test('updateTool throws when tool does not exist', async () => {
-    try {
-      await updateTool('nonexistent', { description: 'test' });
-      expect(true).toBe(false);
-    } catch (error) {
-      expect((error as Error).message).toContain('不存在');
-    }
-  });
-
-  test('deleteTool removes custom tool correctly', async () => {
-    await addTool(mockTool);
-    let tools = loadTools();
-    expect(tools.find(t => t.name === 'test_tool')).toBeDefined();
-
-    await deleteTool('test_tool');
-    tools = loadTools();
-    expect(tools.find(t => t.name === 'test_tool')).toBeUndefined();
-  });
-
-  test('deleteTool throws when trying to delete builtin tool', async () => {
-    try {
-      await deleteTool('weather');
-      expect(true).toBe(false);
-    } catch (error) {
-      expect((error as Error).message).toContain('内置工具');
-    }
-  });
-
-  test('deleteTool throws when tool does not exist', async () => {
-    try {
-      await deleteTool('nonexistent');
-      expect(true).toBe(false);
-    } catch (error) {
-      expect((error as Error).message).toContain('不存在');
-    }
+  test('builtinTools.weather = false 时 weather 不在列表中', async () => {
+    const config = createConfig({ weather: false });
+    const defs = await getUnifiedToolDefs(config);
+    const weather = defs.find(d => d.name === 'weather');
+    expect(weather).toBeUndefined();
   });
 });

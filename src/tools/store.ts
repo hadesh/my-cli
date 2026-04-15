@@ -1,119 +1,76 @@
-import { mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import type { Tool, ToolsConfig } from '../types/tool.js';
+import { weatherToolDef, weatherExecutor } from './builtin/weather.js'
+import { getMCPToolDefs, callMCPTool } from '../mcp/client.js'
+import type { BuiltinToolDef, UnifiedTool } from '../types/tool.js'
+import type { Config } from '../config/schema.js'
+import type { ToolExecutor } from './base.js'
 
-const BUILTIN_DIR = join(fileURLToPath(import.meta.url), '..', 'builtin');
+// 所有内置工具定义（硬编码注册表）
+const BUILTIN_DEFS: BuiltinToolDef[] = [weatherToolDef]
 
-const BUILTIN_TOOLS: Tool[] = [
-  {
-    name: 'weather',
-    description: '查询指定城市的实时天气，返回温度、湿度、风速、风向、降水概率等信息',
-    enabled: true,
-    builtin: true,
-    scriptPath: join(BUILTIN_DIR, 'weather.ts'),
-    parameters: {
-      type: 'object',
-      properties: {
-        city: { type: 'string', description: '城市名称，支持中文或英文' },
-      },
-      required: ['city'],
-    },
-  },
-]
-
-function getToolsConfigFile(): string {
-  const home = process.env.HOME ?? homedir();
-  return join(home, '.config', 'my-cli', 'tools.json');
+// 内置工具执行器映射
+const BUILTIN_EXECUTORS: Record<string, ToolExecutor> = {
+  weather: weatherExecutor,
 }
 
-function loadUserTools(): Tool[] {
-  try {
-    const content = readFileSync(getToolsConfigFile(), 'utf-8');
-    const data = JSON.parse(content) as ToolsConfig;
-    return data.tools ?? [];
-  } catch {
-    return [];
-  }
+/**
+ * 返回所有内置工具定义列表
+ */
+export function getAllBuiltinDefs(): BuiltinToolDef[] {
+  return BUILTIN_DEFS
 }
 
-export function loadTools(): Tool[] {
-  const userTools = loadUserTools();
-
-  const merged = BUILTIN_TOOLS.map(builtin => {
-    const override = userTools.find(t => t.name === builtin.name);
-    if (override) {
-      return { ...builtin, enabled: override.enabled };
-    }
-    return builtin;
-  });
-
-  const customTools = userTools.filter(t => !BUILTIN_TOOLS.some(b => b.name === t.name));
-  return [...merged, ...customTools];
+/**
+ * 根据 config.builtinTools 过滤，返回已启用的内置工具定义
+ * 默认启用（config.builtinTools[name] 未设置时视为 true）
+ */
+export function getEnabledBuiltinDefs(config: Config): BuiltinToolDef[] {
+  return BUILTIN_DEFS.filter(d => config.builtinTools?.[d.name] !== false)
 }
 
-export async function saveTools(tools: Tool[]): Promise<void> {
-  const configFile = getToolsConfigFile();
-  mkdirSync(dirname(configFile), { recursive: true });
-  await Bun.write(configFile, JSON.stringify({ tools }, null, 2));
+/**
+ * 根据名称返回内置工具执行器
+ */
+export function getBuiltinExecutor(name: string): ToolExecutor | undefined {
+  return BUILTIN_EXECUTORS[name]
 }
 
-export async function addTool(tool: Tool): Promise<void> {
-  const allTools = loadTools();
-  const existing = allTools.find(t => t.name === tool.name);
-  if (existing) {
-    throw new Error(`工具 "${tool.name}" 已存在`);
-  }
-  const userTools = loadUserTools();
-  userTools.push(tool);
-  await saveTools(userTools);
+/**
+ * 聚合内置工具 + MCP 工具，返回统一格式（供 ask.ts 使用）
+ */
+export async function getUnifiedToolDefs(config: Config): Promise<UnifiedTool[]> {
+  // 内置工具（已启用的）
+  const builtins: UnifiedTool[] = getEnabledBuiltinDefs(config).map(d => ({
+    name: d.name,
+    description: d.description,
+    parameters: d.parameters,
+    source: 'builtin' as const,
+  }))
+
+  // MCP 工具（从 client 获取，失败时已在 client 内部降级）
+  const mcpDefs = await getMCPToolDefs()
+  const mcps: UnifiedTool[] = mcpDefs.map(d => ({
+    name: d.function.name,
+    description: d.function.description,
+    parameters: d.function.parameters as import('../types/tool.js').ToolParameters,
+    source: 'mcp' as const,
+  }))
+
+  return [...builtins, ...mcps]
 }
 
-export async function updateTool(name: string, patch: Partial<Tool>): Promise<void> {
-  const allTools = loadTools();
-  const target = allTools.find(t => t.name === name);
-  if (!target) {
-    throw new Error(`工具 "${name}" 不存在`);
+/**
+ * 根据工具名称执行工具
+ * - 内置工具：直接调用 executor.execute()
+ * - MCP 工具（servername__toolname 格式）：通过 callMCPTool 调用
+ */
+export async function executeUnifiedTool(
+  name: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  const executor = getBuiltinExecutor(name)
+  if (executor) {
+    return executor.execute(args as Record<string, string>)
   }
-
-  if (target.builtin) {
-    const userTools = loadUserTools();
-    const existing = userTools.find(t => t.name === name);
-    if (existing) {
-      Object.assign(existing, patch);
-      await saveTools(userTools);
-    } else {
-      userTools.push({ ...target, ...patch });
-      await saveTools(userTools);
-    }
-    return;
-  }
-
-  const userTools = loadUserTools();
-  const index = userTools.findIndex(t => t.name === name);
-  if (index === -1) {
-    throw new Error(`工具 "${name}" 不存在`);
-  }
-  Object.assign(userTools[index], patch);
-  await saveTools(userTools);
-}
-
-export async function deleteTool(name: string): Promise<void> {
-  const allTools = loadTools();
-  const target = allTools.find(t => t.name === name);
-  if (!target) {
-    throw new Error(`工具 "${name}" 不存在`);
-  }
-  if (target.builtin) {
-    throw new Error(`工具 "${name}" 是内置工具，无法删除（可使用 disable 禁用）`);
-  }
-
-  const userTools = loadUserTools();
-  const index = userTools.findIndex(t => t.name === name);
-  if (index === -1) {
-    throw new Error(`工具 "${name}" 不存在`);
-  }
-  userTools.splice(index, 1);
-  await saveTools(userTools);
+  // MCP 工具（包含 __ 的名称）
+  return callMCPTool(name, args)
 }

@@ -1,4 +1,5 @@
 import type { ToolExecutor } from '../base.js'
+import type { BuiltinToolDef } from '../../types/tool.js'
 
 const WMO_CODES: Record<number, string> = {
   0: '晴天',
@@ -106,10 +107,20 @@ const weatherTool: ToolExecutor = {
   },
 }
 
-const args = JSON.parse(process.argv[2] ?? '{}') as Record<string, string>
-weatherTool.execute(args).then(result => {
-  process.stdout.write(result + '\n')
-}).catch(err => {
-  process.stderr.write((err as Error).message + '\n')
-  process.exit(1)
-})
+export const weatherToolDef: BuiltinToolDef = {
+  name: 'weather',
+  description: '获取指定城市的实时天气信息',
+  enabled: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      city: {
+        type: 'string',
+        description: '城市名称，支持中文（如"北京"）或英文（如"Beijing"）',
+      },
+    },
+    required: ['city'],
+  },
+}
+
+export const weatherExecutor: ToolExecutor = weatherTool
