@@ -5,17 +5,18 @@ export interface ToolParameters {
   required?: string[]
 }
 
-// 单个工具定义（持久化格式）
-export interface Tool {
-  name: string           // 唯一标识，LLM 调用时使用
-  description: string    // 工具功能描述，发给 LLM
-  enabled: boolean       // 是否在 ask 中启用
-  scriptPath: string     // JS/TS 工具脚本文件绝对路径
-  builtin?: boolean      // true 表示内置工具，不可删除（只能 disable）
+// 内置工具定义（代码直调,不经过脚本）
+export interface BuiltinToolDef {
+  name: string           // 唯一标识,LLM 调用时使用
+  description: string    // 工具功能描述,发给 LLM
+  enabled: boolean       // 默认启用状态
   parameters: ToolParameters
 }
 
-// tools.json 文件格式
-export interface ToolsConfig {
-  tools: Tool[]
+// 统一工具类型（内置工具 + MCP 工具的统一视图）
+export interface UnifiedTool {
+  name: string           // 内置工具：直接名称；MCP 工具：servername__toolname
+  description: string
+  parameters: ToolParameters
+  source: 'builtin' | 'mcp'
 }
