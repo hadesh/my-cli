@@ -1,0 +1,9 @@
+Command: bun build src/main.ts --target bun --outdir /tmp/check-out
+Exit Code: 0
+Output:
+Bundled 595 modules in 77ms
+
+  main.js  3.48 MB  (entry point)
+
+Status: PASS
+

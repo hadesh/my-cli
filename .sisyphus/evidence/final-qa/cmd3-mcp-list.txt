@@ -1,0 +1,6 @@
+Command: bun run src/main.ts mcp list
+Exit Code: 0
+Output:
+暂无已配置的 MCP server
+
+Status: PASS

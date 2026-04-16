@@ -72,11 +72,11 @@
 - 扩展 `src/errors/base.ts`（新增 LLMError）
 
 ### Definition of Done
-- [ ] `bun test` 全部通过，0 failure
-- [ ] `my-cli ask "Hello"` 流式输出 LLM 回复（需配置好 provider）
-- [ ] `my-cli init` 引导填写并生成 `~/.config/my-cli/agent.md`
-- [ ] `my-cli session list` 列出所有 sessions
-- [ ] `my-cli llm list` 列出所有 providers
+- [x] `bun test` 全部通过，0 failure
+- [x] `my-cli ask "Hello"` 流式输出 LLM 回复（需配置好 provider）
+- [x] `my-cli init` 引导填写并生成 `~/.config/my-cli/agent.md`
+- [x] `my-cli session list` 列出所有 sessions
+- [x] `my-cli llm list` 列出所有 providers
 
 ### Must Have
 - OpenAI `/v1/chat/completions` 协议兼容
@@ -411,7 +411,7 @@ Parallel Speedup: ~60% 快于串行
 
 ## TODOs
 
-- [ ] 1. Foundation：类型定义 + 路径常量 + LLMError + args 解析修复 + config 写接口
+- [x] 1. Foundation：类型定义 + 路径常量 + LLMError + args 解析修复 + config 写接口
 
   **What to do**:
 
@@ -549,7 +549,7 @@ Parallel Speedup: ~60% 快于串行
   - Message: `feat(foundation): fix args parsing, add saveConfig, add LLM/session types`
   - Files: `src/types/llm.ts`, `src/types/session.ts`, `src/errors/base.ts`, `src/config/paths.ts`, `src/config/schema.ts`
 
-- [ ] 2. Session Store：JSON 文件 CRUD + 活跃 session 管理
+- [x] 2. Session Store：JSON 文件 CRUD + 活跃 session 管理
 
   **What to do**:
   - 创建 `src/session/store.ts`，实现以下函数（全部 async）：
@@ -639,7 +639,7 @@ Parallel Speedup: ~60% 快于串行
   - Files: `src/session/store.ts`, `src/session/store.test.ts`
   - Pre-commit: `bun test src/session/store.test.ts`
 
-- [ ] 3. LLM Client：SSE 流式调用
+- [x] 3. LLM Client：SSE 流式调用
 
   **What to do**:
   - 创建 `src/llm/client.ts`，核心函数：
@@ -720,7 +720,7 @@ Parallel Speedup: ~60% 快于串行
   - Files: `src/llm/client.ts`, `src/llm/client.test.ts`
   - Pre-commit: `bun test src/llm/client.test.ts`
 
-- [ ] 4. session 命令组：new / list / switch / delete
+- [x] 4. session 命令组：new / list / switch / delete
 
   **What to do**:
   - 创建 `src/commands/session.ts`，作为顶层命令（**不使用 registry 树形子命令**）：
@@ -802,7 +802,7 @@ Parallel Speedup: ~60% 快于串行
 
   **Commit**: YES（与 Task 5、6 一起 Commit 4）
 
-- [ ] 5. llm 命令组 + Provider 配置管理
+- [x] 5. llm 命令组 + Provider 配置管理
 
   **What to do**:
   - 创建 `src/llm/config.ts`，实现：
@@ -892,7 +892,7 @@ Parallel Speedup: ~60% 快于串行
   - Message: `feat(commands): add session and llm command groups`
   - Pre-commit: `bun test`
 
-- [ ] 6. init 命令：交互式生成 agent.md
+- [x] 6. init 命令：交互式生成 agent.md
 
   **What to do**:
   - 创建 `src/commands/init.ts`：
@@ -966,7 +966,7 @@ Parallel Speedup: ~60% 快于串行
 
   **Commit**: YES（与 Task 4、5 一起 Commit 4）
 
-- [ ] 7. ask 命令：流式问答 + session 上下文 + agent.md
+- [x] 7. ask 命令：流式问答 + session 上下文 + agent.md
 
   **What to do**:
   - 创建 `src/commands/ask.ts`，实现命令 `ask <message> [--session <id>]`：
@@ -1109,7 +1109,7 @@ Parallel Speedup: ~60% 快于串行
 
 > 3 个 review agent 并行运行，全部 APPROVE 后向用户呈现结果，等待用户明确确认后才算完成。
 
-- [ ] F1. **方案符合性审计** — `oracle`
+- [x] F1. **方案符合性审计** — `oracle`
   逐条检查 Must Have / Must NOT Have。对 ask/init/session/llm 命令：执行 `bun run src/main.ts <command> --help` 验证命令存在；检查 Must NOT Have（REPL/工具调用等）是否在 codebase 中出现。
   Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT: APPROVE/REJECT`
 
@@ -1142,7 +1142,7 @@ Parallel Speedup: ~60% 快于串行
     Evidence: .sisyphus/evidence/final-f1-must-not-have.txt
   ```
 
-- [ ] F2. **代码质量检查** — `unspecified-high`
+- [x] F2. **代码质量检查** — `unspecified-high`
   运行 `bun test` + `tsc --noEmit`。检查所有新文件：无 `as any`，无空 catch，无 console.log（生产代码），无 TODO 遗留，无 unused imports。
   Output: `Build [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
 
@@ -1176,7 +1176,7 @@ Parallel Speedup: ~60% 快于串行
     Evidence: .sisyphus/evidence/final-f2-slop-check.txt
   ```
 
-- [ ] F3. **全量 QA 场景执行** — `unspecified-high`
+- [x] F3. **全量 QA 场景执行** — `unspecified-high`
   从干净状态执行每个 task 的所有 QA 场景（见各 task 中的 QA Scenarios 章节）。保存证据到 `.sisyphus/evidence/final-qa/`。
   Output: `Scenarios [N/N pass] | Edge Cases [N tested] | VERDICT`
 
@@ -1244,8 +1244,8 @@ bun run src/main.ts init          # 预期：交互式提示
 ```
 
 ### Final Checklist
-- [ ] 所有 Must Have 已实现
-- [ ] 所有 Must NOT Have 未出现
-- [ ] bun test 全部通过
-- [ ] ask 命令流式输出正常
-- [ ] session 持久化正常
+- [x] 所有 Must Have 已实现
+- [x] 所有 Must NOT Have 未出现
+- [x] bun test 全部通过
+- [x] ask 命令流式输出正常
+- [x] session 持久化正常

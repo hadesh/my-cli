@@ -25,11 +25,39 @@ export interface ChatChunk {
   }>
 }
 
+export type Modality = 'text' | 'image' | 'audio' | 'video'
+
+export interface ThinkingOption {
+  type: 'enabled' | 'disabled'
+  budgetTokens?: number
+}
+
+export interface ModelOptions {
+  thinking?: ThinkingOption
+  [key: string]: unknown
+}
+
+export interface ModelInfo {
+  name: string
+  modalities?: {
+    input: Modality[]
+    output: Modality[]
+  }
+  options?: ModelOptions
+  limit?: {
+    context: number  // 上下文窗口（tokens）
+    output: number   // 最大输出（tokens）
+  }
+}
+
+export type ModelMap = Record<string, ModelInfo>
+
 export interface LLMProvider {
   name: string        // 唯一标识，用户自定义
   baseUrl: string     // 例 https://api.deepseek.com
   apiKey: string
   model: string       // 例 deepseek-chat
+  models?: ModelMap
 }
 
 export interface LLMConfig {

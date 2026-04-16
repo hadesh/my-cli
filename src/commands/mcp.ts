@@ -37,23 +37,17 @@ export const mcpCommand: Command = {
         break;
 
       case 'remove':
-        if (!args[1]) {
-          throw new UsageError('用法: my-cli mcp remove <name>');
-        }
+        if (!args[1]) throw new UsageError('用法: my-cli mcp remove <name>');
         await handleRemove(config, args[1]);
         break;
 
       case 'enable':
-        if (!args[1]) {
-          throw new UsageError('用法: my-cli mcp enable <name>');
-        }
+        if (!args[1]) throw new UsageError('用法: my-cli mcp enable <name>');
         await handleEnable(config, args[1]);
         break;
 
       case 'disable':
-        if (!args[1]) {
-          throw new UsageError('用法: my-cli mcp disable <name>');
-        }
+        if (!args[1]) throw new UsageError('用法: my-cli mcp disable <name>');
         await handleDisable(config, args[1]);
         break;
 
@@ -67,21 +61,49 @@ async function handleAdd(config: Config): Promise<void> {
   const rl = readline.createInterface({ input, output });
 
   try {
-    const name = await rl.question('Server 名称: ');
-    const command = await rl.question('Command (如 npx): ');
-    const argsStr = await rl.question('Args (空格分隔，如 -y @modelcontextprotocol/server-filesystem /tmp): ');
-    const enabledStr = await rl.question('是否立即启用? (y/n，默认 y): ');
+    const name = (await rl.question('Server 名称: ')).trim();
+    if (!name) throw new UsageError('Server 名称不能为空');
 
-    const argsArray = argsStr.split(' ').filter(Boolean);
-    const enabled = enabledStr.trim().toLowerCase() !== 'n';
+    const typeInput = (await rl.question('类型 (local/remote，默认 local): ')).trim().toLowerCase();
+    const type = typeInput === 'remote' ? 'remote' : 'local';
 
-    await addMCPServer(name.trim(), {
-      command: command.trim(),
-      args: argsArray,
-      enabled,
-    });
+    const enabledStr = (await rl.question('是否立即启用? (y/n，默认 y): ')).trim().toLowerCase();
+    const enabled = enabledStr !== 'n';
 
-    success(config, `已添加 MCP server: ${name.trim()}`);
+    if (type === 'remote') {
+      const url = (await rl.question('远程 URL (如 https://mcp.example.com/mcp): ')).trim();
+      if (!url) throw new UsageError('远程 URL 不能为空');
+
+      const headersStr = (await rl.question('请求头 (可选，格式 Key:Value，多个用逗号分隔): ')).trim();
+      const headers: Record<string, string> = {};
+      if (headersStr) {
+        for (const pair of headersStr.split(',')) {
+          const idx = pair.indexOf(':');
+          if (idx > 0) {
+            headers[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+          }
+        }
+      }
+
+      await addMCPServer(name, {
+        type: 'remote',
+        url,
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
+        enabled,
+      });
+    } else {
+      const commandStr = (await rl.question('命令 (空格分隔，如 npx -y @modelcontextprotocol/server-filesystem /tmp): ')).trim();
+      if (!commandStr) throw new UsageError('命令不能为空');
+      const command = commandStr.split(/\s+/).filter(Boolean);
+
+      await addMCPServer(name, {
+        type: 'local',
+        command,
+        enabled,
+      });
+    }
+
+    success(config, `已添加 MCP server: ${name}`);
   } finally {
     rl.close();
   }
@@ -98,7 +120,8 @@ async function handleList(config: Config): Promise<void> {
 
   const rows = servers.map(([name, server]) => ({
     名称: name,
-    命令: server.command,
+    类型: server.type,
+    地址: server.type === 'remote' ? server.url : server.command.join(' '),
     状态: server.enabled ? '启用' : '禁用',
   }));
 

@@ -1,0 +1,4 @@
+Bundled 7 modules in 5ms
+
+  mcp.js  6.55 KB  (entry point)
+

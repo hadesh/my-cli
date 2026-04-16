@@ -1,0 +1,6 @@
+11:export async function loadMCPServers(): Promise<MCPServersConfig> {
+25:export async function saveMCPServers(config: MCPServersConfig): Promise<void> {
+38:export async function addMCPServer(name: string, serverConfig: MCPServerConfig): Promise<void> {
+54:export async function removeMCPServer(name: string): Promise<void> {
+69:export async function enableMCPServer(name: string): Promise<void> {
+84:export async function disableMCPServer(name: string): Promise<void> {

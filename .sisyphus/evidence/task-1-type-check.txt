@@ -1,0 +1,4 @@
+=== Type Check Evidence ===
+Files: src/types/tool.ts, src/mcp/types.ts
+Result: bun build succeeded (Bundled 2 modules)
+2026年 4月15日 星期三 21时28分19秒 CST

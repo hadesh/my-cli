@@ -4,6 +4,7 @@ import type { ChatMessage, LLMProvider } from '../types/llm.js';
 import type { Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import chalk from 'chalk';
 import { UsageError } from '../errors/base.js';
 import { streamChat, chatWithTools } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
@@ -13,6 +14,19 @@ import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
 import { closeRuntime } from '../mcp/client.js';
 import { countTokens, freeEncoder } from '../utils/tokenizer.js';
 import { calcContextStats, formatContextLine } from '../utils/context.js';
+
+function printToolThinking(toolName: string): void {
+  let label: string;
+  if (toolName.includes('__')) {
+    const idx = toolName.indexOf('__');
+    const serverName = toolName.slice(0, idx);
+    const tName = toolName.slice(idx + 2);
+    label = chalk.dim(`▸ 调用 MCP 工具 [${serverName}] ${tName}`);
+  } else {
+    label = chalk.dim(`▸ 调用工具 [${toolName}]`);
+  }
+  process.stdout.write(label + '\n');
+}
 
 export const streamChatFactory = {
   call: streamChat,
@@ -126,8 +140,15 @@ export const askCommand: Command = {
 
     let fullReply = '';
     const maxToolCalls = 10;
+    const modelName = config.model?.includes('/')
+      ? config.model.split('/').slice(1).join('/')
+      : (config.model ?? '');
 
     try {
+      const preStats = await calcContextStats(messages.map(m => m.content ?? ''), config);
+      freeEncoder();
+      process.stdout.write(chalk.dim.italic(formatContextLine(preStats, modelName)) + '\n');
+
       process.stderr.write('思考中...\n');
 
       if (tools.length === 0) {
@@ -173,6 +194,7 @@ export const askCommand: Command = {
                 process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
               }
               try {
+                printToolThinking(toolName);
                 result = await executeUnifiedTool(toolName, argsObject);
               } catch (e) {
                 result = `工具 "${toolName}" 执行失败: ${(e as Error).message}`;
@@ -213,12 +235,6 @@ export const askCommand: Command = {
 
       const rendered = renderMarkdown(fullReply);
       process.stdout.write(rendered + '\n');
-
-      const allTexts = messages.map(m => m.content ?? '');
-      allTexts.push(fullReply);
-      const stats = await calcContextStats(allTexts, config);
-      freeEncoder();
-      process.stderr.write(`\n${formatContextLine(stats)}\n`);
     } catch (e) {
       if (verbose) {
         process.stderr.write(`[DEBUG] Error details: ${(e as Error).stack}\n`);

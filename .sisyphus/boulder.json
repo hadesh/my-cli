@@ -1,31 +1,88 @@
 {
-  "active_plan": "/Users/hanxiaoming/Desktop/github/my-cli/.sisyphus/plans/llm-upgrade.md",
-  "started_at": "2026-04-10T10:56:36.520Z",
+  "active_plan": "/Users/hanxiaoming/Desktop/github/my-cli/.sisyphus/plans/tool-system-refactor.md",
+  "started_at": "2026-04-15T13:23:20.301Z",
   "session_ids": [
-    "ses_2892f418affeIqXI0t3m4flTGj",
-    "ses_2747bc2fbffeq6muNLqz4atPwz",
-    "ses_2747b0191ffe4DgblLBPEbgnhv",
-    "ses_2747a46a4ffeyqo033UuvHJIhY",
-    "ses_2747992ccffe6VZr3oPgruFJE0"
+    "ses_26ecc6366ffeFPjA1ZS92S99qx",
+    "ses_26e7d45e3ffeMo8WBVjxT0vsEw",
+    "ses_26e7cdb7bffeAr0nIVJLH5Aof8"
   ],
   "session_origins": {
-    "ses_2892f418affeIqXI0t3m4flTGj": "direct",
-    "ses_2747bc2fbffeq6muNLqz4atPwz": "appended",
-    "ses_2747b0191ffe4DgblLBPEbgnhv": "appended",
-    "ses_2747a46a4ffeyqo033UuvHJIhY": "appended",
-    "ses_2747992ccffe6VZr3oPgruFJE0": "appended"
+    "ses_26ecc6366ffeFPjA1ZS92S99qx": "direct",
+    "ses_26e7d45e3ffeMo8WBVjxT0vsEw": "appended",
+    "ses_26e7cdb7bffeAr0nIVJLH5Aof8": "appended"
   },
-  "plan_name": "llm-upgrade",
+  "plan_name": "tool-system-refactor",
   "agent": "atlas",
   "task_sessions": {
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "Foundation：类型定义 + 路径常量 + LLMError + args 解析修复 + config 写接口",
-      "session_id": "ses_2747a46a4ffeyqo033UuvHJIhY",
+      "task_title": "类型定义重构：`src/types/tool.ts` + `src/mcp/types.ts`",
+      "session_id": "ses_26eacfe26ffeFGo3e1oK2mh5Oo",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-15T13:28:34.228Z"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "配置层更新：`src/config/schema.ts` + `src/config/paths.ts`",
+      "session_id": "ses_26eaae032ffeEOXwaAryjgXhz0",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-15T13:30:48.945Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "MCP client 封装：`src/mcp/client.ts`",
+      "session_id": "ses_26ea21d3fffetKuBTXTm2hgW0s",
       "agent": "Sisyphus-Junior",
       "category": "unspecified-high",
-      "updated_at": "2026-04-14T10:43:14.382Z"
+      "updated_at": "2026-04-15T13:41:45.677Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "内置工具重构：`src/tools/builtin/weather.ts` + 内置工具接口",
+      "session_id": "ses_26e9d2814ffe2B5H0PvhKUk0NW",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-15T13:45:25.161Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "tools/store.ts 全量重构：统一聚合内置工具 + MCP 工具",
+      "session_id": "ses_26e97f543ffe9nD5dnJ9mRat4D",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-04-15T13:51:56.905Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**计划合规审计** — `oracle`",
+      "session_id": "ses_26e85dcb0ffey30Wf3zjL8W72p",
+      "agent": "oracle",
+      "updated_at": "2026-04-15T14:11:13.735Z"
+    },
+    "final-wave:f2": {
+      "task_key": "final-wave:f2",
+      "task_label": "F2",
+      "task_title": "**TypeScript 编译 + 代码质量** — `unspecified-high`",
+      "session_id": "ses_26e84107bffe4DWx53Xpc2FVSq",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-04-15T14:13:24.554Z"
+    },
+    "final-wave:f3": {
+      "task_key": "final-wave:f3",
+      "task_label": "F3",
+      "task_title": "**端到端 QA** — `unspecified-high`",
+      "session_id": "ses_26e7cdb7bffeAr0nIVJLH5Aof8",
+      "agent": "oracle",
+      "updated_at": "2026-04-15T14:25:48.456Z"
     }
   }
 }

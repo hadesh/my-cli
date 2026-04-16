@@ -3,7 +3,7 @@
  * 提供工具发现、调用、LLM function calling 格式转换等功能
  */
 
-import { createRuntime, type Runtime, createCallResult } from 'mcporter';
+import { createRuntime, type Runtime, createCallResult, type ServerDefinition } from 'mcporter';
 import type { MCPToolInfo } from './types.js';
 import { loadMCPServers } from './config.js';
 
@@ -21,20 +21,35 @@ async function getRuntime(): Promise<Runtime> {
 
   const config = await loadMCPServers();
 
-  // 过滤出启用的 server
-  const enabledServers: Record<string, { command: string; args?: string[]; env?: Record<string, string> }> = {};
+  const serverDefs: ServerDefinition[] = [];
   for (const [name, server] of Object.entries(config.mcpServers)) {
-    if (server.enabled) {
-      enabledServers[name] = {
-        command: server.command,
-        args: server.args,
-        env: server.env,
-      };
+    if (!server.enabled) continue;
+
+    if (server.type === 'remote') {
+      serverDefs.push({
+        name,
+        command: {
+          kind: 'http',
+          url: new URL(server.url),
+          ...(server.headers ? { headers: server.headers } : {}),
+        },
+      });
+    } else {
+      const [cmd, ...rest] = server.command;
+      serverDefs.push({
+        name,
+        command: {
+          kind: 'stdio',
+          command: cmd,
+          args: rest,
+          cwd: process.cwd(),
+        },
+        ...(server.env ? { env: server.env } : {}),
+      });
     }
   }
 
-  // 创建 runtime（无 enabled server 时也能正常工作）
-  _runtime = createRuntime({ mcpServers: enabledServers });
+  _runtime = await createRuntime({ servers: serverDefs });
   return _runtime;
 }
 
@@ -57,7 +72,6 @@ export async function listAllMCPTools(): Promise<MCPToolInfo[]> {
   const runtime = await getRuntime();
   const config = await loadMCPServers();
 
-  // 获取所有启用的 server 名称
   const enabledServerNames = Object.entries(config.mcpServers)
     .filter(([, server]) => server.enabled)
     .map(([name]) => name);

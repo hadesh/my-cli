@@ -1,0 +1,15 @@
+Command: bun run src/main.ts mcp --help
+Exit Code: 0
+Output:
+mcp — 管理 MCP server 配置
+
+用法: my-cli mcp <add|list|remove|enable|disable>
+
+示例:
+  my-cli mcp add
+  my-cli mcp list
+  my-cli mcp remove myserver
+  my-cli mcp enable myserver
+  my-cli mcp disable myserver
+
+Status: PASS
