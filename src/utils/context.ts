@@ -35,3 +35,35 @@ export function formatContextLine(stats: ContextStats, modelName?: string): stri
 
   return modelName ? `${modelName}, ${contextPart}` : contextPart;
 }
+
+export async function trimMessages(
+  messages: Array<{ role: string; content: string }>,
+  config: Config
+): Promise<Array<{ role: string; content: string }>> {
+  const isLite = (config.chatMode ?? 'lite') === 'lite';
+  let result = isLite ? messages.slice(-20) : [...messages];
+
+  if (!config.model) return result;
+
+  const [providerName, modelId] = config.model.split('/');
+  if (!providerName || !modelId) return result;
+
+  const llmConfig = await loadLLMConfig();
+  const provider = llmConfig.providers.find(p => p.name === providerName);
+  const contextLimit = provider?.models?.[modelId]?.limit?.context;
+
+  if (!contextLimit) return result;
+
+  const triggerRatio = isLite ? 0.5 : 0.8;
+  const targetRatio = 0.5;
+
+  const getTokens = () => countTokens(result.map(m => m.content).join(''));
+
+  if (getTokens() / contextLimit > triggerRatio) {
+    while (result.length > 1 && getTokens() / contextLimit > targetRatio) {
+      result = result.slice(1);
+    }
+  }
+
+  return result;
+}

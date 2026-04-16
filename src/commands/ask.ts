@@ -13,7 +13,7 @@ import { renderMarkdown } from '../output/markdown.js';
 import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
 import { closeRuntime } from '../mcp/client.js';
 import { countTokens, freeEncoder } from '../utils/tokenizer.js';
-import { calcContextStats, formatContextLine } from '../utils/context.js';
+import { calcContextStats, formatContextLine, trimMessages } from '../utils/context.js';
 
 function printToolThinking(toolName: string): void {
   let label: string;
@@ -93,8 +93,7 @@ export const askCommand: Command = {
     }
     
     // 滑动窗口裁剪
-    const contextWindow = config.contextWindow ?? 20;
-    const recentMessages = session.messages.slice(-contextWindow);
+    const recentMessages = await trimMessages(session.messages, config);
     
     // 构造 messages 数组
     const messages: ChatMessage[] = [];

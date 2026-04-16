@@ -15,7 +15,7 @@ import { loadLLMConfig } from '../llm/config.js';
 import { printTable } from '../output/text.js';
 import { UsageError } from '../errors/base.js';
 import { countTokens, freeEncoder } from '../utils/tokenizer.js';
-import { calcContextStats } from '../utils/context.js';
+import { calcContextStats, formatContextLine, trimMessages } from '../utils/context.js';
 
 export const sessionCommand: Command = {
   name: 'session',
@@ -108,17 +108,14 @@ export const sessionCommand: Command = {
         const userMessages = session.messages.filter(m => m.role === 'user');
         const assistantMessages = session.messages.filter(m => m.role === 'assistant');
 
-        // 与 ask 保持一致：使用相同的滑动窗口裁剪
-        const contextWindow = config.contextWindow ?? 20;
-        const recentMessages = session.messages.slice(-contextWindow);
+        const recentMessages = await trimMessages(session.messages, config);
         const messageText = recentMessages.map(m => m.content).join('');
         const messageTokens = countTokens(messageText);
 
         const stats = await calcContextStats([agentMd, messageText], config);
-        const { totalTokens, contextLimit } = stats;
-        const percentStr = contextLimit
-          ? `${((totalTokens / contextLimit) * 100).toFixed(1)}%`
-          : '未知（未配置模型）';
+        const modelName = config.model?.includes('/')
+          ? config.model.split('/').slice(1).join('/')
+          : (config.model ?? '');
 
         printTable(config, [
           { 项目: 'Session ID', 值: session.id },
@@ -129,9 +126,7 @@ export const sessionCommand: Command = {
           { 项目: '---', 值: '---' },
           { 项目: 'Base tokens (agent.md)', 值: String(baseTokens) },
           { 项目: 'Message tokens (对话)', 值: String(messageTokens) },
-          { 项目: '总 tokens', 值: String(totalTokens) },
-          { 项目: '上下文窗口', 值: contextLimit ? String(contextLimit) : '未配置' },
-          { 项目: '窗口占用', 值: percentStr },
+          { 项目: '上下文', 值: formatContextLine(stats, modelName) },
         ]);
         freeEncoder();
         break;
