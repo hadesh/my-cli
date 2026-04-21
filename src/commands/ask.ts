@@ -9,6 +9,7 @@ import { UsageError } from '../errors/base.js';
 import { streamChat, chatWithTools } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
 import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
+import { saveConfig } from '../config/loader.js';
 import { renderMarkdown } from '../output/markdown.js';
 import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
 import { closeRuntime } from '../mcp/client.js';
@@ -139,9 +140,7 @@ export const askCommand: Command = {
 
     let fullReply = '';
     const maxToolCalls = 10;
-    const modelName = config.model?.includes('/')
-      ? config.model.split('/').slice(1).join('/')
-      : (config.model ?? '');
+    const modelName = provider.model;
 
     try {
       const preStats = await calcContextStats(messages.map(m => m.content ?? ''), config);
@@ -249,5 +248,7 @@ export const askCommand: Command = {
     session.messages.push({ role: 'assistant', content: fullReply, timestamp: now });
     await storeFactory.updateSession(session);
     await storeFactory.setActiveSessionId(session.id);
+
+    await saveConfig({ model: `${provider.name}/${provider.model}` });
   },
 };

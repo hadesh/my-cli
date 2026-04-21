@@ -99,12 +99,50 @@ export async function getProvider(name: string): Promise<LLMProvider | undefined
 }
 export async function setDefaultProvider(name: string): Promise<void> {
   const config = await loadLLMConfig();
-  
+
   const provider = config.providers.find(p => p.name === name);
   if (!provider) {
     throw new UsageError(`Provider 不存在: ${name}`);
   }
-  
+
   config.defaultProvider = name;
   await saveLLMConfig(config);
+}
+
+export async function setProviderModel(providerName: string, model: string): Promise<void> {
+  const config = await loadLLMConfig();
+
+  const provider = config.providers.find(p => p.name === providerName);
+  if (!provider) {
+    throw new UsageError(`Provider 不存在: ${providerName}`);
+  }
+
+  if (provider.models && !provider.models[model]) {
+    throw new UsageError(`Model 不存在: ${model}`);
+  }
+
+  provider.model = model;
+  await saveLLMConfig(config);
+}
+
+export async function getProviderModels(providerName: string): Promise<Record<string, unknown> | null> {
+  const config = await loadLLMConfig();
+
+  const provider = config.providers.find(p => p.name === providerName);
+  if (!provider) {
+    return null;
+  }
+
+  return provider.models || {};
+}
+
+export async function getModelInfo(providerName: string, modelId: string): Promise<Record<string, unknown> | null> {
+  const config = await loadLLMConfig();
+
+  const provider = config.providers.find(p => p.name === providerName);
+  if (!provider || !provider.models) {
+    return null;
+  }
+
+  return provider.models[modelId] || null;
 }
