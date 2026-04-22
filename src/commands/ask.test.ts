@@ -36,6 +36,8 @@ describe('askCommand', () => {
     originalExecutorExecute = executorFactory.execute;
 
     mkdirSync(join(tmpDir, '.config', 'my-cli', 'sessions'), { recursive: true });
+
+    toolsStoreFactory.loadTools = async () => [];
   });
 
   afterEach(() => {
@@ -70,7 +72,7 @@ describe('askCommand', () => {
     // mock streamChat
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       onChunk('Hello');
-      return 'Hello';
+      return { reply: 'Hello', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -118,7 +120,7 @@ describe('askCommand', () => {
     // mock streamChat
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       onChunk('New answer');
-      return 'New answer';
+      return { reply: 'New answer', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -179,7 +181,7 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       capturedMessages = messages;
       onChunk('Hello');
-      return 'Hello';
+      return { reply: 'Hello', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -209,7 +211,7 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       capturedMessages = messages;
       onChunk('Hello');
-      return 'Hello';
+      return { reply: 'Hello', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -263,7 +265,7 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       capturedMessages = messages;
       onChunk('Hello');
-      return 'Hello';
+      return { reply: 'Hello', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -291,7 +293,6 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       throw new LLMError('LLM API 错误: HTTP 500');
     };
-
     // mock getOrCreateActiveSession 返回内存对象（不写文件）
     let updateSessionCalled = false;
     storeFactory.getOrCreateActiveSession = async () => ({
@@ -335,7 +336,7 @@ describe('askCommand', () => {
     let streamChatCalled = false;
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       streamChatCalled = true;
-      return 'Hello without tools';
+      return { reply: 'Hello without tools', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -381,7 +382,7 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       streamChatCalled = true;
       onChunk('Stream reply');
-      return 'Stream reply';
+      return { reply: 'Stream reply', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -440,7 +441,7 @@ describe('askCommand', () => {
     streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
       streamChatCalled = true;
       onChunk('北京天气晴朗');
-      return '北京天气晴朗';
+      return { reply: '北京天气晴朗', thinking: '' };
     };
 
     const config = { contextWindow: 20 } as Config;
@@ -451,16 +452,18 @@ describe('askCommand', () => {
     // streamChat 应该被调用一次（最后一轮）
     expect(streamChatCalled).toBe(true);
 
-    // 验证 session 只存了 user 和 assistant 消息
+    // 验证 session 保存了完整链路：user + assistant(tool_calls) + tool + assistant(final)
     const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
     const files = readdirSync(sessionsDir);
     const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
-    expect(session.messages).toHaveLength(2);
+    expect(session.messages).toHaveLength(4);
     expect(session.messages[0].role).toBe('user');
     expect(session.messages[1].role).toBe('assistant');
-    expect(session.messages[1].content).toBe('北京天气晴朗');
-    // 确保 session 中没有 tool 或 tool_calls 消息
-    expect(session.messages.some((m: any) => m.role === 'tool')).toBe(false);
-    expect(session.messages.some((m: any) => m.tool_calls)).toBe(false);
+    expect(session.messages[1].tool_calls).toBeDefined();
+    expect(session.messages[1].tool_calls[0].function.name).toBe('get_weather');
+    expect(session.messages[2].role).toBe('tool');
+    expect(session.messages[2].content).toBe('晴天 25°C');
+    expect(session.messages[3].role).toBe('assistant');
+    expect(session.messages[3].content).toBe('北京天气晴朗');
   });
 });

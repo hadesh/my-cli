@@ -57,7 +57,7 @@ describe('streamChat', () => {
     const result = await streamChat(mockProvider, mockMessages, onChunk);
     global.fetch = originalFetch;
 
-    expect(result).toBe('Hello World');
+    expect(result.reply).toBe('Hello World');
     expect(chunksReceived).toEqual(['Hello', ' World']);
   });
 
@@ -123,7 +123,7 @@ describe('streamChat', () => {
     const result = await streamChat(mockProvider, mockMessages, onChunk);
     global.fetch = originalFetch;
 
-    expect(result).toBe('');
+    expect(result.reply).toBe('');
     expect(chunksReceived).toEqual([]);
   });
 
@@ -148,7 +148,7 @@ describe('streamChat', () => {
     const result = await streamChat(mockProvider, mockMessages, onChunk);
     global.fetch = originalFetch;
 
-    expect(result).toBe('Hello');
+    expect(result.reply).toBe('Hello');
     expect(chunksReceived).toEqual(['Hello']);
   });
 });

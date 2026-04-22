@@ -20,7 +20,7 @@ export interface ChatChunk {
   id: string
   object: 'chat.completion.chunk'
   choices: Array<{
-    delta: { role?: ChatRole; content?: string }
+    delta: { role?: ChatRole; content?: string; reasoning_content?: string }
     finish_reason: string | null
   }>
 }
@@ -92,6 +92,7 @@ export interface ChatResponse {
       role: 'assistant'
       content: string | null
       tool_calls?: ToolCall[]
+      reasoning_content?: string | null
     }
     finish_reason: string
   }>

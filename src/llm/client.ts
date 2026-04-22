@@ -7,10 +7,11 @@ export async function streamChat(
   provider: LLMProvider,
   messages: ChatMessage[],
   onChunk: (content: string) => void,
-  options?: { timeout?: number; verbose?: boolean }
-): Promise<string> {
+  options?: { timeout?: number; verbose?: boolean; onThinkingChunk?: (content: string) => void }
+): Promise<{ reply: string; thinking: string }> {
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
   const verbose = options?.verbose ?? false;
+  const onThinkingChunk = options?.onThinkingChunk;
   const url = provider.baseUrl;
 
   if (verbose) {
@@ -56,6 +57,7 @@ export async function streamChat(
     const decoder = new TextDecoder();
     let buffer = '';
     let fullReply = '';
+    let fullThinking = '';
     let hasReceivedData = false;
 
     while (true) {
@@ -99,13 +101,18 @@ export async function streamChat(
           if (verbose) {
             process.stderr.write(`[DEBUG] Received [DONE]\n`);
           }
-          return fullReply;
+          return { reply: fullReply, thinking: fullThinking };
         }
 
         try {
           const parsed: ChatChunk = JSON.parse(data);
           if (verbose) {
             process.stderr.write(`[DEBUG] Parsed chunk: ${JSON.stringify(parsed)}\n`);
+          }
+          const thinkingContent = parsed.choices?.[0]?.delta?.reasoning_content ?? '';
+          if (thinkingContent) {
+            if (onThinkingChunk) onThinkingChunk(thinkingContent);
+            fullThinking += thinkingContent;
           }
           const content = parsed.choices?.[0]?.delta?.content ?? '';
           if (content) {
@@ -124,7 +131,7 @@ export async function streamChat(
       process.stderr.write(`[DEBUG] Warning: No data received from stream\n`);
     }
 
-    return fullReply;
+    return { reply: fullReply, thinking: fullThinking };
   } catch (e) {
     clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {

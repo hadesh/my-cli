@@ -1,7 +1,7 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
 import type { ChatMessage, LLMProvider } from '../types/llm.js';
-import type { Session } from '../types/session.js';
+import type { Message, Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import chalk from 'chalk';
@@ -42,6 +42,14 @@ export const storeFactory = {
 
 export const chatWithToolsFactory = {
   call: chatWithTools,
+};
+
+export const executorFactory = {
+  execute: executeUnifiedTool,
+};
+
+export const toolsStoreFactory = {
+  loadTools: getUnifiedToolDefs,
 };
 
 export const askCommand: Command = {
@@ -102,12 +110,19 @@ export const askCommand: Command = {
       messages.push({ role: 'system', content: agentMd });
     }
     for (const m of recentMessages) {
-      messages.push({ role: m.role, content: m.content });
+      if (m.role === 'thinking') continue;
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+        messages.push({ role: 'assistant', content: m.content, tool_calls: m.tool_calls });
+      } else if (m.role === 'tool') {
+        messages.push({ role: 'tool', tool_call_id: m.tool_call_id, content: m.content });
+      } else {
+        messages.push({ role: m.role, content: m.content });
+      }
     }
     messages.push({ role: 'user', content: message });
 
     // 加载统一工具列表（内置 + MCP）
-    const tools = await getUnifiedToolDefs(config);
+    const tools = await toolsStoreFactory.loadTools(config);
     if (verbose) {
       process.stderr.write(`[DEBUG] 已加载工具数量: ${tools.length}\n`);
       for (const t of tools) {
@@ -139,6 +154,7 @@ export const askCommand: Command = {
     });
 
     let fullReply = '';
+    const pendingMessages: Message[] = [];
     const maxToolCalls = 10;
     const modelName = provider.model;
 
@@ -150,8 +166,15 @@ export const askCommand: Command = {
       process.stderr.write('思考中...\n');
 
       if (tools.length === 0) {
-        fullReply = await streamChatFactory.call(provider, messages, () => {
-        }, { timeout, verbose });
+        const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+        }, {
+          timeout, verbose,
+          onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+        });
+        fullReply = reply;
+        if (thinking) {
+          pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+        }
       } else {
         let toolCallCount = 0;
         let lastResponseContent: string | null = null;
@@ -173,10 +196,18 @@ export const askCommand: Command = {
               process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}\n`);
             }
 
-            messages.push({
+            const assistantToolMsg: ChatMessage = {
               role: 'assistant',
               content: assistantMessage.content ?? '',
               tool_calls: assistantMessage.tool_calls
+            };
+            messages.push(assistantToolMsg);
+            const now = new Date().toISOString();
+            pendingMessages.push({
+              role: 'assistant',
+              content: assistantMessage.content ?? '',
+              timestamp: now,
+              tool_calls: assistantMessage.tool_calls,
             });
 
             for (const toolCall of assistantMessage.tool_calls) {
@@ -193,7 +224,7 @@ export const askCommand: Command = {
               }
               try {
                 printToolThinking(toolName);
-                result = await executeUnifiedTool(toolName, argsObject);
+                result = await executorFactory.execute(toolName, argsObject);
               } catch (e) {
                 result = `工具 "${toolName}" 执行失败: ${(e as Error).message}`;
               }
@@ -206,20 +237,40 @@ export const askCommand: Command = {
                 tool_call_id: toolCall.id,
                 content: result
               });
+              pendingMessages.push({
+                role: 'tool',
+                content: result,
+                timestamp: new Date().toISOString(),
+                tool_call_id: toolCall.id,
+              });
             }
           } else {
             lastResponseContent = assistantMessage.content ?? '';
 
             if (toolCallCount === 0) {
-              fullReply = await streamChatFactory.call(provider, messages, () => {
-              }, { timeout, verbose });
+              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+              }, {
+                timeout, verbose,
+                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+              });
+              fullReply = reply;
+              if (thinking) {
+                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+              }
             } else {
               messages.push({
                 role: 'assistant',
                 content: assistantMessage.content ?? ''
               });
-              fullReply = await streamChatFactory.call(provider, messages, () => {
-              }, { timeout, verbose });
+              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+              }, {
+                timeout, verbose,
+                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+              });
+              fullReply = reply;
+              if (thinking) {
+                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+              }
             }
             break;
           }
@@ -245,6 +296,9 @@ export const askCommand: Command = {
 
     const now = new Date().toISOString();
     session.messages.push({ role: 'user', content: message, timestamp: now });
+    for (const m of pendingMessages) {
+      session.messages.push(m);
+    }
     session.messages.push({ role: 'assistant', content: fullReply, timestamp: now });
     await storeFactory.updateSession(session);
     await storeFactory.setActiveSessionId(session.id);
