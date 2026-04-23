@@ -1,0 +1,6 @@
+Command: bun run src/main.ts tools enable weather
+Exit Code: 0
+Output:
+工具 "weather" 已启用
+
+Status: PASS

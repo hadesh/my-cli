@@ -6,12 +6,24 @@ import { UsageError } from './errors/base.js';
 import { Registry } from './registry.js';
 import { helloCommand } from './commands/core/hello.js';
 import { weatherCommand } from './commands/core/weather.js';
+import { sessionCommand } from './commands/session.js';
+import { llmCommand } from './commands/llm.js';
+import { initCommand } from './commands/init.js';
+import { askCommand } from './commands/ask.js';
+import { toolsCommand } from './commands/tools.js';
+import { mcpCommand } from './commands/mcp.js';
 
 const VERSION = '0.1.0';
 
 const registry = new Registry();
 registry.register(helloCommand);
 registry.register(weatherCommand);
+registry.register(sessionCommand);
+registry.register(llmCommand);
+registry.register(initCommand);
+registry.register(askCommand);
+registry.register(toolsCommand);
+registry.register(mcpCommand);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

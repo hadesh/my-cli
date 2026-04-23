@@ -1,0 +1,341 @@
+import type { Command } from '../command.js';
+import type { Config } from '../config/schema.js';
+import type { ChatMessage, LLMProvider, ContentPart, TextContentPart } from '../types/llm.js';
+import type { Message, Session, AttachmentMeta } from '../types/session.js';
+import { homedir } from 'node:os';
+import { basename } from 'node:path';
+import { join } from 'node:path';
+import chalk from 'chalk';
+import { UsageError } from '../errors/base.js';
+import { streamChat, chatWithTools } from '../llm/client.js';
+import { getDefaultProvider, getProvider } from '../llm/config.js';
+import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
+import { saveConfig } from '../config/loader.js';
+import { renderMarkdown } from '../output/markdown.js';
+import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
+import { closeRuntime } from '../mcp/client.js';
+import { countTokens, freeEncoder } from '../utils/tokenizer.js';
+import { calcContextStats, formatContextLine, trimMessages } from '../utils/context.js';
+
+function printToolThinking(toolName: string): void {
+  let label: string;
+  if (toolName.includes('__')) {
+    const idx = toolName.indexOf('__');
+    const serverName = toolName.slice(0, idx);
+    const tName = toolName.slice(idx + 2);
+    label = chalk.dim(`▸ 调用 MCP 工具 [${serverName}] ${tName}`);
+  } else {
+    label = chalk.dim(`▸ 调用工具 [${toolName}]`);
+  }
+  process.stdout.write(label + '\n');
+}
+
+export const streamChatFactory = {
+  call: streamChat,
+};
+
+export const storeFactory = {
+  getSession,
+  getOrCreateActiveSession,
+  updateSession,
+  setActiveSessionId,
+};
+
+export const chatWithToolsFactory = {
+  call: chatWithTools,
+};
+
+export const executorFactory = {
+  execute: executeUnifiedTool,
+};
+
+export const toolsStoreFactory = {
+  loadTools: getUnifiedToolDefs,
+};
+
+export const askCommand: Command = {
+  name: 'ask',
+  description: '向 LLM 发送消息',
+  usage: 'my-cli ask <消息> [--file <路径>] [--session <session-id>] [--provider <name>] [--verbose]',
+  examples: [
+    'my-cli ask 什么是 TypeScript?',
+    'my-cli ask "图片里有什么" --file ./photo.jpg',
+    'my-cli ask "总结文档" --file ./README.md --file ./CHANGELOG.md',
+    'my-cli ask --session 20260410-123456-abcd 继续讨论',
+    'my-cli ask --provider deepseek 你好',
+  ],
+  async execute(config: Config, flags: Record<string, unknown>, args: string[]): Promise<void> {
+    const message = args[0];
+    const sessionId = flags['session'] as string | undefined;
+    const providerName = flags['provider'] as string | undefined;
+    const verbose = flags['verbose'] === true;
+    const timeout = flags['timeout'] ? parseInt(flags['timeout'] as string, 10) : undefined;
+    const filePaths = flags['file'] as string[] | undefined;
+    
+    if (!message) {
+      throw new UsageError('请提供消息内容');
+    }
+    
+    let provider: LLMProvider;
+    if (providerName) {
+      const p = await getProvider(providerName);
+      if (!p) {
+        throw new UsageError(`Provider 不存在: ${providerName}`);
+      }
+      provider = p;
+    } else {
+      provider = await getDefaultProvider();
+    }
+    
+    // 读取 agent.md
+    const agentMdPath = join(process.env.HOME ?? homedir(), '.config', 'my-cli', 'agent.md');
+    let agentMd = '';
+    try {
+      agentMd = await Bun.file(agentMdPath).text();
+    } catch {
+      // 文件不存在，agentMd 保持空字符串
+    }
+    
+    // 加载 session
+    let session: Session;
+    if (sessionId) {
+      session = await storeFactory.getSession(sessionId);
+    } else {
+      session = await storeFactory.getOrCreateActiveSession();
+    }
+    
+    // 滑动窗口裁剪
+    const recentMessages = await trimMessages(session.messages, config);
+    
+    // 构造 messages 数组
+    const messages: ChatMessage[] = [];
+    if (agentMd) {
+      messages.push({ role: 'system', content: agentMd });
+    }
+    for (const m of recentMessages) {
+      if (m.role === 'thinking') continue;
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+        messages.push({ role: 'assistant', content: m.content, tool_calls: m.tool_calls });
+      } else if (m.role === 'tool') {
+        messages.push({ role: 'tool', tool_call_id: m.tool_call_id, content: m.content });
+      } else {
+        messages.push({ role: m.role, content: m.content });
+      }
+    }
+    if (filePaths && filePaths.length > 0) {
+      const { buildAttachmentContentParts } = await import('../utils/file.js');
+      const contentParts = await buildAttachmentContentParts(filePaths, message);
+      messages.push({ role: 'user', content: contentParts });
+    } else {
+      messages.push({ role: 'user', content: message });
+    }
+
+    // 加载统一工具列表（内置 + MCP）
+    const tools = await toolsStoreFactory.loadTools(config);
+    if (verbose) {
+      process.stderr.write(`[DEBUG] 已加载工具数量: ${tools.length}\n`);
+      for (const t of tools) {
+        process.stderr.write(`[DEBUG] 工具: ${t.name} (${t.source}) - ${t.description}\n`);
+      }
+    }
+    const toolDefs = tools.map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      }
+    }));
+    if (verbose && toolDefs.length > 0) {
+      process.stderr.write(`[DEBUG] toolDefs: ${JSON.stringify(toolDefs, null, 2)}\n`);
+    }
+
+    let partialReply = '';
+    process.once('SIGINT', async () => {
+      if (partialReply) {
+        const now = new Date().toISOString();
+        session.messages.push({ role: 'user', content: message, timestamp: now });
+        session.messages.push({ role: 'assistant', content: partialReply, timestamp: now });
+        await storeFactory.updateSession(session);
+        await storeFactory.setActiveSessionId(session.id);
+      }
+      process.exit(0);
+    });
+
+    let fullReply = '';
+    let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+    const pendingMessages: Message[] = [];
+    const maxToolCalls = 10;
+    const modelName = provider.model;
+
+    try {
+      const contentToText = (c: string | ContentPart[]): string => {
+        if (typeof c === 'string') return c;
+        return c.filter((p): p is TextContentPart => p.type === 'text').map(p => p.text).join('');
+      };
+      const preStats = await calcContextStats(messages.map(m => contentToText(m.content)), config);
+      process.stdout.write(chalk.dim.italic(formatContextLine(preStats, modelName)));
+      process.stdout.write('\n');
+      freeEncoder();
+
+      process.stderr.write('思考中...\n');
+
+      if (tools.length === 0) {
+        const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+        }, {
+          timeout, verbose,
+          onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+        });
+        fullReply = reply;
+        if (thinking) {
+          pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+        }
+      } else {
+        let toolCallCount = 0;
+        let lastResponseContent: string | null = null;
+
+        while (toolCallCount < maxToolCalls) {
+          const response = await chatWithToolsFactory.call(provider, messages, toolDefs, { timeout, verbose });
+          const choice = response.choices[0];
+          const assistantMessage = choice.message;
+
+          if (verbose) {
+            process.stderr.write(`[DEBUG] chatWithTools 响应 tool_calls: ${JSON.stringify(assistantMessage.tool_calls ?? null)}\n`);
+            process.stderr.write(`[DEBUG] chatWithTools 响应 content: ${assistantMessage.content ?? '(空)'}\n`);
+          }
+
+          if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+            toolCallCount++;
+            lastResponseContent = assistantMessage.content ?? '';
+            if (verbose) {
+              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}
+`);
+            }
+
+            const assistantToolMsg: ChatMessage = {
+              role: 'assistant',
+              content: assistantMessage.content ?? '',
+              tool_calls: assistantMessage.tool_calls
+            };
+            messages.push(assistantToolMsg);
+            const now = new Date().toISOString();
+            const assistantPendingMsg: Message = {
+              role: 'assistant',
+              content: assistantMessage.content ?? '',
+              timestamp: now,
+              tool_calls: assistantMessage.tool_calls,
+            };
+            if (response.usage) {
+              assistantPendingMsg.usage = {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                total_tokens: response.usage.total_tokens,
+              };
+              lastUsage = assistantPendingMsg.usage;
+            }
+            pendingMessages.push(assistantPendingMsg);
+
+            for (const toolCall of assistantMessage.tool_calls) {
+              const toolName = toolCall.function.name;
+              let result: string;
+              let argsObject: Record<string, unknown> = {};
+              try {
+                argsObject = JSON.parse(toolCall.function.arguments);
+              } catch {
+                argsObject = {};
+              }
+              if (verbose) {
+                process.stderr.write(`[DEBUG] 执行工具 "${toolName}"，参数: ${JSON.stringify(argsObject)}\n`);
+              }
+              try {
+                printToolThinking(toolName);
+                result = await executorFactory.execute(toolName, argsObject);
+              } catch (e) {
+                result = `工具 "${toolName}" 执行失败: ${(e as Error).message}`;
+              }
+              if (verbose) {
+                process.stderr.write(`[DEBUG] 工具 "${toolName}" 返回结果长度: ${result.length}\n`);
+              }
+
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: result
+              });
+              pendingMessages.push({
+                role: 'tool',
+                content: result,
+                timestamp: new Date().toISOString(),
+                tool_call_id: toolCall.id,
+              });
+            }
+          } else {
+            lastResponseContent = assistantMessage.content ?? '';
+
+            if (toolCallCount === 0) {
+              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+              }, {
+                timeout, verbose,
+                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+              });
+              fullReply = reply;
+              if (thinking) {
+                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+              }
+            } else {
+              messages.push({
+                role: 'assistant',
+                content: assistantMessage.content ?? ''
+              });
+              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
+              }, {
+                timeout, verbose,
+                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
+              });
+              fullReply = reply;
+              if (thinking) {
+                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
+              }
+            }
+            break;
+          }
+
+          if (toolCallCount >= maxToolCalls) {
+            fullReply = lastResponseContent ?? '';
+            break;
+          }
+        }
+      }
+
+      const rendered = renderMarkdown(fullReply);
+      process.stdout.write(rendered + '\n');
+    } catch (e) {
+      if (verbose) {
+        process.stderr.write(`[DEBUG] Error details: ${(e as Error).stack}\n`);
+      }
+      process.stderr.write(`LLM 调用失败: ${(e as Error).message}\n`);
+      return;
+    } finally {
+      await closeRuntime();
+    }
+
+    const now = new Date().toISOString();
+    const userMsg: Message = { role: 'user', content: message, timestamp: now };
+    if (filePaths && filePaths.length > 0) {
+      userMsg.attachments = filePaths.map(p => ({ name: basename(p), path: p }));
+    }
+    session.messages.push(userMsg);
+    for (const m of pendingMessages) {
+      session.messages.push(m);
+    }
+    const assistantMsg: Message = { role: 'assistant', content: fullReply, timestamp: now };
+    if (lastUsage) {
+      assistantMsg.usage = lastUsage;
+    }
+    session.messages.push(assistantMsg);
+    await storeFactory.updateSession(session);
+    await storeFactory.setActiveSessionId(session.id);
+
+    await saveConfig({ model: `${provider.name}/${provider.model}` });
+  },
+};

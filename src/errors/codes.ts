@@ -7,4 +7,5 @@ export enum ExitCode {
   USAGE = 2,
   AUTH = 3,
   NETWORK = 4,
+  LLM = 7,
 }

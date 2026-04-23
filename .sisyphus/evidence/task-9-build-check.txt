@@ -1,0 +1,4 @@
+Bundled 595 modules in 46ms
+
+  main.js  3.48 MB  (entry point)
+

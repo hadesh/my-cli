@@ -6,13 +6,13 @@ import { UsageError } from '../../errors/base.js';
 
 export const weatherCommand: Command = {
   name: 'weather',
-  description: '查询指定城市的当前天气或未来 7 天预报',
+  description: '查询指定城市的当前天气或未来天气预报',
   usage: 'my-cli weather <城市名> [--forecast]',
   options: [
     {
       name: 'forecast',
       short: 'f',
-      description: '显示未来 7 天天气预报',
+      description: '显示未来天气预报（最多3天）',
       type: 'boolean',
       default: false,
     },
@@ -32,30 +32,24 @@ export const weatherCommand: Command = {
     const isForecast = flags['forecast'] === true || flags['f'] === true;
 
     if (isForecast) {
-      const result = await fetchForecast(city, 7);
-      print(config, `${result.city}，${result.country} — 未来 7 天预报`);
-      printTable(
-        config,
-        result.days.map((d) => ({
-          日期: d.date,
-          天气: d.description,
-          '最高(°C)': String(d.tempMax),
-          '最低(°C)': String(d.tempMin),
-          '降水(mm)': String(d.precipitation),
-          '风速(km/h)': String(d.windSpeedMax),
-        })),
-      );
+      const result = await fetchForecast(city, 3);
+      print(config, result);
     } else {
       const w = await fetchWeather(city);
+      const location = [w.city, w.region, w.country]
+        .filter(Boolean)
+        .join('，');
       printTable(config, [
-        { 项目: '城市', 值: `${w.city}，${w.country}` },
+        { 项目: '城市', 值: location },
         { 项目: '天气', 值: w.description },
         { 项目: '温度', 值: `${w.temperature} °C` },
+        { 项目: '体感温度', 值: `${w.feelsLike} °C` },
         { 项目: '湿度', 值: `${w.humidity} %` },
+        { 项目: '气压', 值: `${w.pressure} hPa` },
         { 项目: '风速', 值: `${w.windSpeed} km/h` },
-        { 项目: '风向', 值: `${w.windDirection}°` },
-        { 项目: '昼夜', 值: w.isDay ? '白天' : '夜间' },
-        { 项目: '时间', 值: w.time },
+        { 项目: '风向', 值: w.windDirection },
+        { 项目: '能见度', 值: `${w.visibility} km` },
+        ...(w.uvIndex !== null ? [{ 项目: 'UV指数', 值: String(w.uvIndex) }] : []),
       ]);
     }
   },

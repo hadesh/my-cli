@@ -1,0 +1,6 @@
+Command: bun run src/main.ts tools list
+Exit Code: 0
+Output:
+[enabled] [builtin] weather
+
+Status: PASS

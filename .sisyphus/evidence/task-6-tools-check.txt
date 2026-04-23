@@ -1,0 +1,6 @@
+=== Task 6 编译验证 ===
+Bundled 81 modules in 9ms
+
+  tools.js  0.52 MB  (entry point)
+
+=== 编译成功 ===

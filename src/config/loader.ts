@@ -1,10 +1,20 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { configSchema, type Config } from './schema.js';
-import { CONFIG_FILE } from './paths.js';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+function getConfigDir(): string {
+  const home = process.env.HOME ?? homedir();
+  return join(home, '.config', 'my-cli');
+}
+
+function getConfigFile(): string {
+  return join(getConfigDir(), 'config.json');
+}
 
 function readFileConfig(): Record<string, unknown> {
   try {
-    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as Record<string, unknown>;
+    return JSON.parse(readFileSync(getConfigFile(), 'utf-8')) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -25,4 +35,11 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
 
   const merged = { ...fileConfig, ...envConfig, ...overrides };
   return configSchema.parse(merged);
+}
+
+export async function saveConfig(partial: Partial<Config>): Promise<void> {
+  const existing = readFileConfig();
+  const merged = { ...existing, ...partial };
+  mkdirSync(getConfigDir(), { recursive: true });
+  writeFileSync(getConfigFile(), JSON.stringify(merged, null, 2), 'utf-8');
 }

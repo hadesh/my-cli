@@ -1,0 +1,4 @@
+Bundled 6 modules in 28ms
+
+  config.js  12.48 KB  (entry point)
+

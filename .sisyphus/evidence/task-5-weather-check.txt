@@ -1,0 +1,37 @@
+=== 编译验证 ===
+Bundled 1 module in 3ms
+
+  weather.js  3.84 KB  (entry point)
+
+
+=== 最终文件结构 ===
+      city: name,
+      time: c.time,
+      temperature_c: c.temperature_2m,
+      humidity_percent: c.relative_humidity_2m,
+      wind_speed_kmh: c.wind_speed_10m,
+      wind_direction_deg: c.wind_direction_10m,
+      precipitation_probability_percent: c.precipitation_probability,
+      weather_code: c.weathercode,
+      weather_description: WMO_CODES[c.weathercode] ?? `代码${c.weathercode}`,
+    })
+  },
+}
+
+export const weatherToolDef: BuiltinToolDef = {
+  name: 'weather',
+  description: '获取指定城市的实时天气信息',
+  enabled: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      city: {
+        type: 'string',
+        description: '城市名称，支持中文（如"北京"）或英文（如"Beijing"）',
+      },
+    },
+    required: ['city'],
+  },
+}
+
+export const weatherExecutor: ToolExecutor = weatherTool

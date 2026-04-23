@@ -1,0 +1,9 @@
+=== BUN BUILD OUTPUT ===
+Bundled 80 modules in 16ms
+
+  schema.js  0.46 MB  (entry point)
+  paths.js   11.1 KB  (entry point)
+
+=== GREP VERIFICATION ===
+builtinTools field: 16:  builtinTools: z.record(z.boolean()).optional().default({}),
+MCP_SERVERS_FILE constant: 11:export const MCP_SERVERS_FILE = join(CONFIG_DIR, 'mcp-servers.json');

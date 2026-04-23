@@ -10,6 +10,11 @@ export const configSchema = z.object({
   verbose: z.boolean().default(false),
   dryRun: z.boolean().default(false),
   nonInteractive: z.boolean().default(false),
+  contextWindow: z.number().default(20).optional(),
+  activeSessionId: z.string().optional(),
+  model: z.string().optional(),
+  chatMode: z.enum(['lite', 'normal']).default('normal'),
+  builtinTools: z.record(z.string(), z.boolean()).optional().default({}),
 });
 
 export type Config = z.infer<typeof configSchema>;

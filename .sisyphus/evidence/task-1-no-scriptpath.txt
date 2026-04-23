@@ -1,0 +1,4 @@
+=== No scriptPath Evidence ===
+Command: grep -n 'scriptPath' src/types/tool.ts
+Exit code: 1 (no matches found)
+2026年 4月15日 星期三 21时28分19秒 CST
