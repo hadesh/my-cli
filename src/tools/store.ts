@@ -1,15 +1,22 @@
 import { weatherToolDef, weatherExecutor } from './builtin/weather.js'
+import {
+  readFileToolDef, writeFileToolDef, appendFileToolDef,
+  readFileExecutorExport, writeFileExecutorExport, appendFileExecutorExport,
+} from './builtin/file.js'
 import { getMCPToolDefs, callMCPTool } from '../mcp/client.js'
 import type { BuiltinToolDef, UnifiedTool } from '../types/tool.js'
 import type { Config } from '../config/schema.js'
 import type { ToolExecutor } from './base.js'
 
 // 所有内置工具定义（硬编码注册表）
-const BUILTIN_DEFS: BuiltinToolDef[] = [weatherToolDef]
+const BUILTIN_DEFS: BuiltinToolDef[] = [weatherToolDef, readFileToolDef, writeFileToolDef, appendFileToolDef]
 
 // 内置工具执行器映射
 const BUILTIN_EXECUTORS: Record<string, ToolExecutor> = {
   weather: weatherExecutor,
+  read_file: readFileExecutorExport,
+  write_file: writeFileExecutorExport,
+  append_file: appendFileExecutorExport,
 }
 
 /**
