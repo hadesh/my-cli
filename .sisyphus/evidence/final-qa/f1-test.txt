@@ -1,0 +1,20 @@
+bun test v1.3.11 (af24e281)
+[2m[3mgpt-4, context: 4[23m[22m
+[37mHello[39m
+[2m[3mgpt-4, context: 6[23m[22m
+[37mNew answer[39m
+[2m[3mgpt-4, context: 1[23m[22m
+[37mHello[39m
+[2m[3mgpt-4, context: 5[23m[22m
+[37mHello[39m
+[2m[3mgpt-4, context: 62[23m[22m
+[37mHello[39m
+[2m[3mgpt-4, context: 1[23m[22m
+[2m[3mgpt-4, context: 1[23m[22m
+[37mHello without tools[39m
+[2m[3mgpt-4, context: 1[23m[22m
+[37mStream reply[39m
+[2m[3mgpt-4, context: 8[23m[22m
+[2m▸ 调用工具 [get_weather][22m
+[37m北京天气晴朗[39m
+TEST:1
