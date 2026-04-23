@@ -13,7 +13,7 @@ export const configSchema = z.object({
   contextWindow: z.number().default(20).optional(),
   activeSessionId: z.string().optional(),
   model: z.string().optional(),
-  chatMode: z.enum(['lite', 'normal']).default('lite'),
+  chatMode: z.enum(['lite', 'normal']).default('normal'),
   builtinTools: z.record(z.string(), z.boolean()).optional().default({}),
 });
 

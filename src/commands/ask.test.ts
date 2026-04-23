@@ -223,7 +223,7 @@ describe('askCommand', () => {
   });
 
   // 测试 7：滑动窗口 — 25 条历史消息时只取最后 20 条
-  test('ask sliding window keeps only last 20 messages', async () => {
+  test('ask 默认保留全部历史消息（不截断）', async () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
@@ -271,10 +271,8 @@ describe('askCommand', () => {
     const config = { contextWindow: 20 } as Config;
     await askCommand.execute(config, { session: sessionId }, ['New question']);
 
-    // 计算历史消息数（减去 system 消息 1 条、user 消息 1 条）
-    // 没有 agent.md，所以没有 system 消息
-    const historyCount = capturedMessages.length - 1; // 减去最后的 user 消息
-    expect(historyCount).toBe(20);
+    const historyCount = capturedMessages.length - 1;
+    expect(historyCount).toBe(25);
   });
 
   // 测试 8：LLM 失败时不写盘

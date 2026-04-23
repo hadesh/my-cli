@@ -114,8 +114,13 @@ export const sessionCommand: Command = {
         const toolResultMessages = session.messages.filter(m => m.role === 'tool');
         const thinkingMessages = session.messages.filter(m => m.role === 'thinking');
 
+        // 聚合所有消息的 usage 数据
+        const totalPromptTokens = userMessages.reduce((sum, m) => sum + (m.usage?.prompt_tokens ?? 0), 0);
+        const totalCompletionTokens = assistantMessages.reduce((sum, m) => sum + (m.usage?.completion_tokens ?? 0), 0);
+        const totalTokens = totalPromptTokens + totalCompletionTokens;
+
         const recentMessages = await trimMessages(session.messages, config);
-        const messageText = recentMessages.map(m => m.content).join('');
+        const messageText = recentMessages.filter(m => m.role !== 'thinking').map(m => m.content).join('');
         const messageTokens = countTokens(messageText);
 
         const stats = await calcContextStats([agentMd, messageText], config);
@@ -123,7 +128,7 @@ export const sessionCommand: Command = {
           ? config.model.split('/').slice(1).join('/')
           : (config.model ?? '');
 
-        printTable(config, [
+        const rows: Record<string, string>[] = [
           { 项目: 'Session ID', 值: session.id },
           { 项目: '名称', 值: session.name },
           { 项目: '消息数', 值: String(session.messages.length) },
@@ -133,10 +138,24 @@ export const sessionCommand: Command = {
           { 项目: '  工具结果 (tool)', 值: String(toolResultMessages.length) },
           { 项目: '  思考内容 (thinking)', 值: String(thinkingMessages.length) },
           { 项目: '---', 值: '---' },
+        ];
+
+        if (totalTokens > 0) {
+          rows.push(
+            { 项目: 'Prompt tokens', 值: String(totalPromptTokens) },
+            { 项目: 'Completion tokens', 值: String(totalCompletionTokens) },
+            { 项目: 'Total tokens (API)', 值: String(totalTokens) },
+            { 项目: '---', 值: '---' },
+          );
+        }
+
+        rows.push(
           { 项目: 'Base tokens (agent.md)', 值: String(baseTokens) },
           { 项目: 'Message tokens (对话)', 值: String(messageTokens) },
           { 项目: '上下文', 值: formatContextLine(stats, modelName) },
-        ]);
+        );
+
+        printTable(config, rows);
         freeEncoder();
         break;
       }

@@ -1,11 +1,22 @@
 import type { ToolCall } from './llm.js'
 
+export interface AttachmentMeta {
+  name: string
+  path: string
+}
+
 export interface Message {
   role: 'user' | 'assistant' | 'tool' | 'thinking'
   content: string
-  timestamp: string  // ISO 8601
-  tool_calls?: ToolCall[]     // assistant 消息中 LLM 发出的工具调用
-  tool_call_id?: string       // tool 消息中对应的 tool_call id
+  timestamp: string
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+  attachments?: AttachmentMeta[]
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
 }
 
 export interface Session {

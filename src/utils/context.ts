@@ -40,8 +40,7 @@ export async function trimMessages(
   messages: Array<{ role: string; content: string }>,
   config: Config
 ): Promise<Array<{ role: string; content: string }>> {
-  const isLite = (config.chatMode ?? 'lite') === 'lite';
-  let result = isLite ? messages.slice(-20) : [...messages];
+  let result = [...messages];
 
   if (!config.model) return result;
 
@@ -54,7 +53,7 @@ export async function trimMessages(
 
   if (!contextLimit) return result;
 
-  const triggerRatio = isLite ? 0.5 : 0.8;
+  const triggerRatio = 0.8;
   const targetRatio = 0.5;
 
   const getTokens = () => countTokens(result.map(m => m.content).join(''));

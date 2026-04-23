@@ -1,8 +1,9 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
 import type { ChatMessage, LLMProvider, ContentPart, TextContentPart } from '../types/llm.js';
-import type { Message, Session } from '../types/session.js';
+import type { Message, Session, AttachmentMeta } from '../types/session.js';
 import { homedir } from 'node:os';
+import { basename } from 'node:path';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import { UsageError } from '../errors/base.js';
@@ -162,6 +163,7 @@ export const askCommand: Command = {
     });
 
     let fullReply = '';
+    let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
     const pendingMessages: Message[] = [];
     const maxToolCalls = 10;
     const modelName = provider.model;
@@ -172,8 +174,9 @@ export const askCommand: Command = {
         return c.filter((p): p is TextContentPart => p.type === 'text').map(p => p.text).join('');
       };
       const preStats = await calcContextStats(messages.map(m => contentToText(m.content)), config);
+      process.stdout.write(chalk.dim.italic(formatContextLine(preStats, modelName)));
+      process.stdout.write('\n');
       freeEncoder();
-      process.stdout.write(chalk.dim.italic(formatContextLine(preStats, modelName)) + '\n');
 
       process.stderr.write('思考中...\n');
 
@@ -205,7 +208,8 @@ export const askCommand: Command = {
             toolCallCount++;
             lastResponseContent = assistantMessage.content ?? '';
             if (verbose) {
-              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}\n`);
+              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}
+`);
             }
 
             const assistantToolMsg: ChatMessage = {
@@ -215,12 +219,21 @@ export const askCommand: Command = {
             };
             messages.push(assistantToolMsg);
             const now = new Date().toISOString();
-            pendingMessages.push({
+            const assistantPendingMsg: Message = {
               role: 'assistant',
               content: assistantMessage.content ?? '',
               timestamp: now,
               tool_calls: assistantMessage.tool_calls,
-            });
+            };
+            if (response.usage) {
+              assistantPendingMsg.usage = {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                total_tokens: response.usage.total_tokens,
+              };
+              lastUsage = assistantPendingMsg.usage;
+            }
+            pendingMessages.push(assistantPendingMsg);
 
             for (const toolCall of assistantMessage.tool_calls) {
               const toolName = toolCall.function.name;
@@ -307,11 +320,19 @@ export const askCommand: Command = {
     }
 
     const now = new Date().toISOString();
-    session.messages.push({ role: 'user', content: message, timestamp: now });
+    const userMsg: Message = { role: 'user', content: message, timestamp: now };
+    if (filePaths && filePaths.length > 0) {
+      userMsg.attachments = filePaths.map(p => ({ name: basename(p), path: p }));
+    }
+    session.messages.push(userMsg);
     for (const m of pendingMessages) {
       session.messages.push(m);
     }
-    session.messages.push({ role: 'assistant', content: fullReply, timestamp: now });
+    const assistantMsg: Message = { role: 'assistant', content: fullReply, timestamp: now };
+    if (lastUsage) {
+      assistantMsg.usage = lastUsage;
+    }
+    session.messages.push(assistantMsg);
     await storeFactory.updateSession(session);
     await storeFactory.setActiveSessionId(session.id);
 
