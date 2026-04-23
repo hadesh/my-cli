@@ -1,6 +1,6 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
-import type { ChatMessage, LLMProvider } from '../types/llm.js';
+import type { ChatMessage, LLMProvider, ContentPart, TextContentPart } from '../types/llm.js';
 import type { Message, Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -55,12 +55,13 @@ export const toolsStoreFactory = {
 export const askCommand: Command = {
   name: 'ask',
   description: '向 LLM 发送消息',
-  usage: 'my-cli ask <消息> [--session <session-id>] [--provider <name>] [--verbose]',
+  usage: 'my-cli ask <消息> [--file <路径>] [--session <session-id>] [--provider <name>] [--verbose]',
   examples: [
     'my-cli ask 什么是 TypeScript?',
+    'my-cli ask "图片里有什么" --file ./photo.jpg',
+    'my-cli ask "总结文档" --file ./README.md --file ./CHANGELOG.md',
     'my-cli ask --session 20260410-123456-abcd 继续讨论',
     'my-cli ask --provider deepseek 你好',
-    'my-cli ask --verbose 你好',
   ],
   async execute(config: Config, flags: Record<string, unknown>, args: string[]): Promise<void> {
     const message = args[0];
@@ -68,6 +69,7 @@ export const askCommand: Command = {
     const providerName = flags['provider'] as string | undefined;
     const verbose = flags['verbose'] === true;
     const timeout = flags['timeout'] ? parseInt(flags['timeout'] as string, 10) : undefined;
+    const filePaths = flags['file'] as string[] | undefined;
     
     if (!message) {
       throw new UsageError('请提供消息内容');
@@ -119,7 +121,13 @@ export const askCommand: Command = {
         messages.push({ role: m.role, content: m.content });
       }
     }
-    messages.push({ role: 'user', content: message });
+    if (filePaths && filePaths.length > 0) {
+      const { buildAttachmentContentParts } = await import('../utils/file.js');
+      const contentParts = await buildAttachmentContentParts(filePaths, message);
+      messages.push({ role: 'user', content: contentParts });
+    } else {
+      messages.push({ role: 'user', content: message });
+    }
 
     // 加载统一工具列表（内置 + MCP）
     const tools = await toolsStoreFactory.loadTools(config);
@@ -159,7 +167,11 @@ export const askCommand: Command = {
     const modelName = provider.model;
 
     try {
-      const preStats = await calcContextStats(messages.map(m => m.content ?? ''), config);
+      const contentToText = (c: string | ContentPart[]): string => {
+        if (typeof c === 'string') return c;
+        return c.filter((p): p is TextContentPart => p.type === 'text').map(p => p.text).join('');
+      };
+      const preStats = await calcContextStats(messages.map(m => contentToText(m.content)), config);
       freeEncoder();
       process.stdout.write(chalk.dim.italic(formatContextLine(preStats, modelName)) + '\n');
 
