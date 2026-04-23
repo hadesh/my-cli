@@ -1,9 +1,25 @@
 // OpenAI 兼容类型
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool'
 
+// 多模态内容类型（OpenAI 格式）
+export interface TextContentPart {
+  type: 'text'
+  text: string
+}
+
+export interface ImageContentPart {
+  type: 'image_url'
+  image_url: {
+    url: string
+    detail?: 'auto' | 'low' | 'high'
+  }
+}
+
+export type ContentPart = TextContentPart | ImageContentPart
+
 export interface ChatMessage {
   role: ChatRole
-  content: string
+  content: string | ContentPart[]
   tool_call_id?: string    // tool 消息专用（role === 'tool' 时使用）
   tool_calls?: ToolCall[]  // assistant 消息专用（LLM 返回 tool_calls 时）
 }
