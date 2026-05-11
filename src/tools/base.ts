@@ -1,3 +1,3 @@
 export interface ToolExecutor {
-  execute(args: Record<string, string>): Promise<string>
+  execute(args: Record<string, unknown>): Promise<string>
 }

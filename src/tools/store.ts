@@ -71,13 +71,13 @@ export async function getUnifiedToolDefs(config: Config): Promise<UnifiedTool[]>
  * - MCP 工具（servername__toolname 格式）：通过 callMCPTool 调用
  */
 export async function executeUnifiedTool(
-  name: string,
+  tool: UnifiedTool,
   args: Record<string, unknown>
 ): Promise<string> {
-  const executor = getBuiltinExecutor(name)
-  if (executor) {
-    return executor.execute(args as Record<string, string>)
+  if (tool.source === 'builtin') {
+    const executor = getBuiltinExecutor(tool.name)
+    if (!executor) throw new Error(`内置工具不存在: ${tool.name}`)
+    return executor.execute(args)
   }
-  // MCP 工具（包含 __ 的名称）
-  return callMCPTool(name, args)
+  return callMCPTool(tool.fullName ?? tool.name, args)
 }

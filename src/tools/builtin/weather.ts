@@ -85,8 +85,8 @@ async function fetchWeather(lat: number, lon: number) {
 }
 
 const weatherTool: ToolExecutor = {
-  async execute(args: Record<string, string>): Promise<string> {
-    const city = args['city']
+  async execute(args: Record<string, unknown>): Promise<string> {
+    const city = args['city'] as string
     if (!city) throw new Error('缺少参数: city')
 
     const { name, lat, lon } = await resolveCoordinates(city)

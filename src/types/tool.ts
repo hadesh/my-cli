@@ -19,4 +19,5 @@ export interface UnifiedTool {
   description: string
   parameters: ToolParameters
   source: 'builtin' | 'mcp'
+  fullName?: string      // MCP 工具完整名称（含 server 前缀）
 }

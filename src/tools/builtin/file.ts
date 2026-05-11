@@ -4,8 +4,8 @@ import type { ToolExecutor } from '../base.js'
 import type { BuiltinToolDef } from '../../types/tool.js'
 
 const readFileExecutor: ToolExecutor = {
-  async execute(args: Record<string, string>): Promise<string> {
-    const path = args['path']
+  async execute(args: Record<string, unknown>): Promise<string> {
+    const path = args['path'] as string
     if (!path) throw new Error('缺少参数: path')
     const content = await readFile(path, 'utf-8')
     return content
@@ -13,9 +13,9 @@ const readFileExecutor: ToolExecutor = {
 }
 
 const writeFileExecutor: ToolExecutor = {
-  async execute(args: Record<string, string>): Promise<string> {
-    const path = args['path']
-    const content = args['content']
+  async execute(args: Record<string, unknown>): Promise<string> {
+    const path = args['path'] as string
+    const content = args['content'] as string
     if (!path) throw new Error('缺少参数: path')
     if (content === undefined) throw new Error('缺少参数: content')
     await mkdir(dirname(path), { recursive: true })
@@ -25,9 +25,9 @@ const writeFileExecutor: ToolExecutor = {
 }
 
 const appendFileExecutor: ToolExecutor = {
-  async execute(args: Record<string, string>): Promise<string> {
-    const path = args['path']
-    const content = args['content']
+  async execute(args: Record<string, unknown>): Promise<string> {
+    const path = args['path'] as string
+    const content = args['content'] as string
     if (!path) throw new Error('缺少参数: path')
     if (content === undefined) throw new Error('缺少参数: content')
     await mkdir(dirname(path), { recursive: true })

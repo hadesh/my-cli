@@ -63,7 +63,7 @@ describe('getBuiltinExecutor', () => {
 
 describe('executeUnifiedTool', () => {
   test('executeUnifiedTool("weather", { city: "Beijing" }) 返回字符串', async () => {
-    const result = await executeUnifiedTool('weather', { city: 'Beijing' });
+    const result = await executeUnifiedTool({ name: 'weather', description: '', parameters: { type: 'object', properties: {} }, source: 'builtin' }, { city: 'Beijing' });
     expect(typeof result).toBe('string');
     const parsed = JSON.parse(result);
     expect(parsed.city).toBeDefined();
@@ -72,7 +72,7 @@ describe('executeUnifiedTool', () => {
 
   test('executeUnifiedTool("nonexistent") 抛出异常', async () => {
     try {
-      await executeUnifiedTool('nonexistent', {});
+      await executeUnifiedTool({ name: 'nonexistent', description: '', parameters: { type: 'object', properties: {} }, source: 'builtin' }, {});
       expect(true).toBe(false);
     } catch (error) {
       expect((error as Error).message).toBeDefined();
