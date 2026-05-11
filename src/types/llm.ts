@@ -36,7 +36,20 @@ export interface ChatChunk {
   id: string
   object: 'chat.completion.chunk'
   choices: Array<{
-    delta: { role?: ChatRole; content?: string; reasoning_content?: string }
+    delta: {
+      role?: ChatRole
+      content?: string
+      reasoning_content?: string
+      tool_calls?: Array<{
+        index: number
+        id?: string
+        type?: string
+        function?: {
+          name?: string
+          arguments?: string
+        }
+      }>
+    }
     finish_reason: string | null
   }>
 }
@@ -101,7 +114,13 @@ export interface ToolCall {
   }
 }
 
-// 非流式 LLM 响应（用于 chatWithTools）
+export interface ToolCallStreamResult {
+  reply: string
+  thinking: string
+  toolCalls: ToolCall[] | null
+}
+
+// 非流式 LLM 响应
 export interface ChatResponse {
   choices: Array<{
     message: {

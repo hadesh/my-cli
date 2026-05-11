@@ -1,5 +1,5 @@
 import { LLMError } from '../errors/base.js';
-import type { LLMProvider, ChatMessage, ChatChunk, ToolDefinition, ChatResponse } from '../types/llm.js';
+import type { LLMProvider, ChatMessage, ChatChunk, ToolDefinition, ToolCall, ToolCallStreamResult } from '../types/llm.js';
 
 const DEFAULT_TIMEOUT = 30000;
 
@@ -141,21 +141,25 @@ export async function streamChat(
   }
 }
 
-export async function chatWithTools(
+export async function streamChatWithTools(
   provider: LLMProvider,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  options?: { timeout?: number; verbose?: boolean }
-): Promise<ChatResponse> {
+  onChunk: (content: string) => void,
+  options?: { timeout?: number; verbose?: boolean; onThinkingChunk?: (content: string) => void }
+): Promise<ToolCallStreamResult> {
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
   const verbose = options?.verbose ?? false;
+  const onThinkingChunk = options?.onThinkingChunk;
   const url = provider.baseUrl;
 
   if (verbose) {
-    process.stderr.write(`[DEBUG] chatWithTools 请求 URL: ${url}\n`);
-    process.stderr.write(`[DEBUG] chatWithTools tools 数量: ${tools.length}\n`);
-    process.stderr.write(`[DEBUG] chatWithTools tools 名称: ${tools.map(t => t.function.name).join(', ')}\n`);
-    process.stderr.write(`[DEBUG] chatWithTools messages 数量: ${messages.length}\n`);
+    process.stderr.write(`[DEBUG] streamChatWithTools 请求 URL: ${url}\n`);
+    process.stderr.write(`[DEBUG] streamChatWithTools tools 数量: ${tools.length}\n`);
+    if (tools.length > 0) {
+      process.stderr.write(`[DEBUG] streamChatWithTools tools 名称: ${tools.map(t => t.function.name).join(', ')}\n`);
+    }
+    process.stderr.write(`[DEBUG] streamChatWithTools messages 数量: ${messages.length}\n`);
   }
 
   const controller = new AbortController();
@@ -172,8 +176,8 @@ export async function chatWithTools(
       body: JSON.stringify({
         model: provider.model,
         messages,
-        tools,
-        stream: false,
+        ...(tools.length > 0 ? { tools } : {}),
+        stream: true,
       }),
     });
 
@@ -182,18 +186,148 @@ export async function chatWithTools(
     if (!response.ok) {
       const body = await response.text();
       if (verbose) {
-        process.stderr.write(`[DEBUG] chatWithTools HTTP ${response.status}: ${body}\n`);
+        process.stderr.write(`[DEBUG] HTTP Status: ${response.status}\n`);
+        process.stderr.write(`[DEBUG] Response Body: ${body}\n`);
       }
-      throw new LLMError(`LLM API 错误: HTTP ${response.status}`);
+      throw new LLMError(`LLM API 错误: HTTP ${response.status}: ${body}`);
     }
 
-    const result = await response.json() as ChatResponse;
     if (verbose) {
-      const choice = result.choices?.[0];
-      process.stderr.write(`[DEBUG] chatWithTools finish_reason: ${choice?.finish_reason}\n`);
-      process.stderr.write(`[DEBUG] chatWithTools tool_calls: ${JSON.stringify(choice?.message?.tool_calls ?? null)}\n`);
+      process.stderr.write(`[DEBUG] HTTP Status: ${response.status}, streaming started\n`);
     }
-    return result;
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullReply = '';
+    let fullThinking = '';
+
+    const toolCallBuffers = new Map<number, {
+      id: string; type: string; name: string; arguments: string
+    }>();
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        if (verbose) {
+          process.stderr.write(`[DEBUG] Stream done, reply length: ${fullReply.length}\n`);
+        }
+        break;
+      }
+
+      const chunk = decoder.decode(value, { stream: true });
+
+      if (verbose) {
+        process.stderr.write(`[DEBUG] Raw chunk: ${JSON.stringify(chunk)}\n`);
+      }
+
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop()!;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (verbose) {
+          process.stderr.write(`[DEBUG] Processing line: ${JSON.stringify(trimmed)}\n`);
+        }
+
+        if (!trimmed.startsWith('data: ')) {
+          if (verbose) {
+            process.stderr.write(`[DEBUG] Skipping non-data line\n`);
+          }
+          continue;
+        }
+
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') {
+          if (verbose) {
+            process.stderr.write(`[DEBUG] Received [DONE]\n`);
+          }
+          return { reply: fullReply, thinking: fullThinking, toolCalls: null };
+        }
+
+        try {
+          const parsed: ChatChunk = JSON.parse(data);
+          if (verbose) {
+            process.stderr.write(`[DEBUG] Parsed chunk: ${JSON.stringify(parsed)}\n`);
+          }
+
+          const choice = parsed.choices?.[0];
+          if (!choice) continue;
+
+          const delta = choice.delta;
+          const finishReason = choice.finish_reason;
+
+          const thinkingContent = delta?.reasoning_content ?? '';
+          if (thinkingContent) {
+            if (onThinkingChunk) onThinkingChunk(thinkingContent);
+            fullThinking += thinkingContent;
+          }
+
+          const content = delta?.content ?? '';
+          if (content) {
+            onChunk(content);
+            fullReply += content;
+          }
+
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index;
+              if (!toolCallBuffers.has(idx)) {
+                toolCallBuffers.set(idx, {
+                  id: tc.id ?? '',
+                  type: tc.type ?? 'function',
+                  name: tc.function?.name ?? '',
+                  arguments: tc.function?.arguments ?? '',
+                });
+              } else {
+                const buf = toolCallBuffers.get(idx)!;
+                buf.arguments += tc.function?.arguments ?? '';
+              }
+            }
+          }
+
+          if (finishReason === 'tool_calls') {
+            const parsedToolCalls: ToolCall[] = [];
+            for (const [, buf] of toolCallBuffers) {
+              let parsedArgs: unknown;
+              try {
+                parsedArgs = JSON.parse(buf.arguments);
+              } catch (e) {
+                if (verbose) {
+                  console.error(`[DEBUG] tool_call arguments JSON.parse 失败，保留原始字符串: ${buf.arguments}`, e);
+                }
+                parsedArgs = buf.arguments;
+              }
+              parsedToolCalls.push({
+                id: buf.id,
+                type: 'function',
+                function: {
+                  name: buf.name,
+                  arguments: typeof parsedArgs === 'string'
+                    ? parsedArgs
+                    : JSON.stringify(parsedArgs),
+                },
+              });
+            }
+            return { reply: '', thinking: fullThinking, toolCalls: parsedToolCalls };
+          }
+
+          if (finishReason !== null && finishReason !== 'tool_calls') {
+            return { reply: fullReply, thinking: fullThinking, toolCalls: null };
+          }
+        } catch (e) {
+          if (verbose) {
+            process.stderr.write(`[DEBUG] JSON parse error: ${(e as Error).message}, data: ${data}\n`);
+          }
+        }
+      }
+    }
+
+    return { reply: fullReply, thinking: fullThinking, toolCalls: null };
   } catch (e) {
     clearTimeout(timeoutId);
     if ((e as Error).name === 'AbortError') {

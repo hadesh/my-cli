@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from 'bun:test';
-import { streamChat, chatWithTools } from './client.js';
+import { streamChat, streamChatWithTools } from './client.js';
 import { LLMError } from '../errors/base.js';
 import type { LLMProvider, ChatMessage, ToolDefinition } from '../types/llm.js';
 
@@ -153,78 +153,61 @@ describe('streamChat', () => {
   });
 });
 
-describe('chatWithTools', () => {
+describe('streamChatWithTools', () => {
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
     originalFetch = global.fetch;
   });
 
-  it('正常非流式响应，返回 ChatResponse', async () => {
+  it('finish_reason=stop，返回 reply 且 toolCalls 为 null', async () => {
     global.fetch = mock(() =>
       Promise.resolve({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({
-            choices: [
-              {
-                message: { role: 'assistant', content: '答案', tool_calls: undefined },
-                finish_reason: 'stop',
-              },
-            ],
-          }),
+        body: makeSseBody([
+          'data: {"id":"1","object":"chat.completion.chunk","choices":[{"delta":{"content":"答案"},"finish_reason":null}]}',
+          'data: {"id":"1","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}]}',
+          'data: [DONE]',
+        ]),
       } as Response)
     );
 
     const tools: ToolDefinition[] = [];
-    const result = await chatWithTools(mockProvider, mockMessages, tools);
+    const chunks: string[] = [];
+    const result = await streamChatWithTools(mockProvider, mockMessages, tools, (c) => chunks.push(c));
     global.fetch = originalFetch;
 
-    expect(result.choices[0].message.content).toBe('答案');
-    expect(result.choices[0].finish_reason).toBe('stop');
+    expect(result.reply).toBe('答案');
+    expect(result.toolCalls).toBeNull();
+    expect(chunks).toEqual(['答案']);
   });
 
-  it('返回 tool_calls，正确解析', async () => {
+  it('finish_reason=tool_calls，返回解析后的 toolCalls', async () => {
     global.fetch = mock(() =>
       Promise.resolve({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: 'call_123',
-                      type: 'function',
-                      function: { name: 'get_weather', arguments: '{"city":"Beijing"}' },
-                    },
-                  ],
-                },
-                finish_reason: 'tool_calls',
-              },
-            ],
-          }),
+        body: makeSseBody([
+          'data: {"id":"1","object":"chat.completion.chunk","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}',
+          'data: {"id":"1","object":"chat.completion.chunk","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":\\"Beijing\\"}"}}]},"finish_reason":null}]}',
+          'data: {"id":"1","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+          'data: [DONE]',
+        ]),
       } as Response)
     );
 
     const tools: ToolDefinition[] = [
-      {
-        type: 'function',
-        function: { name: 'get_weather', description: '获取天气', parameters: {} },
-      },
+      { type: 'function', function: { name: 'get_weather', description: '获取天气', parameters: {} } },
     ];
-    const result = await chatWithTools(mockProvider, mockMessages, tools);
+    const result = await streamChatWithTools(mockProvider, mockMessages, tools, () => {});
     global.fetch = originalFetch;
 
-    expect(result.choices[0].message.tool_calls).toBeDefined();
-    expect(result.choices[0].message.tool_calls?.length).toBe(1);
-    expect(result.choices[0].message.tool_calls?.[0].function.name).toBe('get_weather');
-    expect(result.choices[0].message.tool_calls?.[0].function.arguments).toBe('{"city":"Beijing"}');
+    expect(result.toolCalls).toBeDefined();
+    expect(result.toolCalls!.length).toBe(1);
+    expect(result.toolCalls![0].function.name).toBe('get_weather');
+    expect(result.toolCalls![0].function.arguments).toBe('{"city":"Beijing"}');
+    expect(result.reply).toBe('');
   });
 
   it('HTTP 401 错误，抛出 LLMError 含 401', async () => {
@@ -238,7 +221,7 @@ describe('chatWithTools', () => {
 
     const tools: ToolDefinition[] = [];
     try {
-      await chatWithTools(mockProvider, mockMessages, tools);
+      await streamChatWithTools(mockProvider, mockMessages, tools, () => {});
       global.fetch = originalFetch;
       expect.unreachable('应该抛出 LLMError');
     } catch (error) {
