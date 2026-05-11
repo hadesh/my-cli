@@ -7,6 +7,7 @@ export interface ParsedArgs {
 export function parseArgs(argv: string[]): ParsedArgs {
   // 需要聚合为数组的 flag 名称（经过 camel 转换后）
   const ARRAY_FLAGS = new Set(['file']);
+  const BOOL_FLAGS = new Set(['verbose', 'btw', 'v']);
 
   const command: string[] = [];
   const flags: Record<string, unknown> = {};
@@ -30,17 +31,21 @@ export function parseArgs(argv: string[]): ParsedArgs {
         }
       } else {
         const k = camel(key);
-        const next = argv[i + 1];
-        if (next !== undefined && !next.startsWith('-')) {
-          if (ARRAY_FLAGS.has(k)) {
-            const existing = flags[k];
-            flags[k] = Array.isArray(existing) ? [...(existing as string[]), next] : [next];
-          } else {
-            flags[k] = next;
-          }
-          i++;
-        } else {
+        if (BOOL_FLAGS.has(k)) {
           flags[k] = true;
+        } else {
+          const next = argv[i + 1];
+          if (next !== undefined && !next.startsWith('-')) {
+            if (ARRAY_FLAGS.has(k)) {
+              const existing = flags[k];
+              flags[k] = Array.isArray(existing) ? [...(existing as string[]), next] : [next];
+            } else {
+              flags[k] = next;
+            }
+            i++;
+          } else {
+            flags[k] = true;
+          }
         }
       }
     } else if (arg.startsWith('-') && arg.length === 2) {

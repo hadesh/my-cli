@@ -57,13 +57,14 @@ export const toolsStoreFactory = {
 export const askCommand: Command = {
   name: 'ask',
   description: '向 LLM 发送消息',
-  usage: 'my-cli ask <消息> [--file <路径>] [--session <session-id>] [--provider <name>] [--verbose]',
+  usage: 'my-cli ask <消息> [--file <路径>] [--session <session-id>] [--provider <name>] [--verbose] [--btw]',
   examples: [
     'my-cli ask 什么是 TypeScript?',
     'my-cli ask "图片里有什么" --file ./photo.jpg',
     'my-cli ask "总结文档" --file ./README.md --file ./CHANGELOG.md',
     'my-cli ask --session 20260410-123456-abcd 继续讨论',
     'my-cli ask --provider deepseek 你好',
+    'my-cli ask --btw "随便问一句，不记录"',
   ],
   async execute(config: Config, flags: Record<string, unknown>, args: string[]): Promise<void> {
     const message = args[0];
@@ -71,6 +72,7 @@ export const askCommand: Command = {
     const providerName = flags['provider'] as string | undefined;
     const verbose = flags['verbose'] === true;
     const timeout = flags['timeout'] ? parseInt(flags['timeout'] as string, 10) : undefined;
+    const btw = flags['btw'] === true;
     const filePaths = flags['file'] as string[] | undefined;
     
     if (!message) {
@@ -291,19 +293,21 @@ export const askCommand: Command = {
       await closeRuntime();
     }
 
-    const now = new Date().toISOString();
-    const userMsg: Message = { role: 'user', content: message, timestamp: now };
-    if (filePaths && filePaths.length > 0) {
-      userMsg.attachments = filePaths.map(p => ({ name: basename(p), path: p }));
+    if (!btw) {
+      const now = new Date().toISOString();
+      const userMsg: Message = { role: 'user', content: message, timestamp: now };
+      if (filePaths && filePaths.length > 0) {
+        userMsg.attachments = filePaths.map(p => ({ name: basename(p), path: p }));
+      }
+      session.messages.push(userMsg);
+      for (const m of pendingMessages) {
+        session.messages.push(m);
+      }
+      const assistantMsg: Message = { role: 'assistant', content: fullReply, timestamp: now };
+      session.messages.push(assistantMsg);
+      await storeFactory.updateSession(session);
+      await storeFactory.setActiveSessionId(session.id);
     }
-    session.messages.push(userMsg);
-    for (const m of pendingMessages) {
-      session.messages.push(m);
-    }
-    const assistantMsg: Message = { role: 'assistant', content: fullReply, timestamp: now };
-    session.messages.push(assistantMsg);
-    await storeFactory.updateSession(session);
-    await storeFactory.setActiveSessionId(session.id);
 
     await saveConfig({ model: `${provider.name}/${provider.model}` });
   },
