@@ -1,20 +1,21 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
-import type { ChatMessage, LLMProvider, ContentPart, TextContentPart } from '../types/llm.js';
-import type { Message, Session, AttachmentMeta } from '../types/session.js';
+import type { ChatMessage, LLMProvider, ContentPart, TextContentPart, ToolCall, ChatRole } from '../types/llm.js';
+import type { Message, Session } from '../types/session.js';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
 import { UsageError } from '../errors/base.js';
-import { streamChat, chatWithTools } from '../llm/client.js';
+import { streamChat, streamChatWithTools } from '../llm/client.js';
 import { getDefaultProvider, getProvider } from '../llm/config.js';
 import { getSession, getOrCreateActiveSession, updateSession, setActiveSessionId } from '../session/store.js';
 import { saveConfig } from '../config/loader.js';
 import { renderMarkdown } from '../output/markdown.js';
 import { getUnifiedToolDefs, executeUnifiedTool } from '../tools/store.js';
 import { closeRuntime } from '../mcp/client.js';
-import { countTokens, freeEncoder } from '../utils/tokenizer.js';
+import { freeEncoder } from '../utils/tokenizer.js';
 import { calcContextStats, formatContextLine, trimMessages } from '../utils/context.js';
 
 function printToolThinking(toolName: string): void {
@@ -42,7 +43,7 @@ export const storeFactory = {
 };
 
 export const chatWithToolsFactory = {
-  call: chatWithTools,
+  call: streamChatWithTools,
 };
 
 export const executorFactory = {
@@ -91,7 +92,7 @@ export const askCommand: Command = {
     const agentMdPath = join(process.env.HOME ?? homedir(), '.config', 'my-cli', 'agent.md');
     let agentMd = '';
     try {
-      agentMd = await Bun.file(agentMdPath).text();
+      agentMd = readFileSync(agentMdPath, 'utf-8');
     } catch {
       // 文件不存在，agentMd 保持空字符串
     }
@@ -105,7 +106,7 @@ export const askCommand: Command = {
     }
     
     // 滑动窗口裁剪
-    const recentMessages = await trimMessages(session.messages, config);
+    const recentMessages = (await trimMessages(session.messages, config)) as Message[];
     
     // 构造 messages 数组
     const messages: ChatMessage[] = [];
@@ -115,11 +116,14 @@ export const askCommand: Command = {
     for (const m of recentMessages) {
       if (m.role === 'thinking') continue;
       if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
-        messages.push({ role: 'assistant', content: m.content, tool_calls: m.tool_calls });
+        messages.push({ role: 'assistant', content: m.content, tool_calls: m.tool_calls as ToolCall[] });
       } else if (m.role === 'tool') {
-        messages.push({ role: 'tool', tool_call_id: m.tool_call_id, content: m.content });
+        const toolCallId = m.tool_call_id;
+        const toolMsg: ChatMessage = { role: 'tool', content: m.content };
+        if (toolCallId !== undefined) toolMsg.tool_call_id = toolCallId;
+        messages.push(toolMsg);
       } else {
-        messages.push({ role: m.role, content: m.content });
+        messages.push({ role: m.role as ChatRole, content: m.content });
       }
     }
     if (filePaths && filePaths.length > 0) {
@@ -163,7 +167,6 @@ export const askCommand: Command = {
     });
 
     let fullReply = '';
-    let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
     const pendingMessages: Message[] = [];
     const maxToolCalls = 10;
     const modelName = provider.model;
@@ -181,61 +184,49 @@ export const askCommand: Command = {
       process.stderr.write('思考中...\n');
 
       if (tools.length === 0) {
-        const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
-        }, {
-          timeout, verbose,
-          onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
-        });
+        const opts: { timeout?: number; verbose?: boolean; onThinkingChunk?: (content: string) => void } = { verbose };
+        if (timeout !== undefined) opts.timeout = timeout;
+        if (verbose) opts.onThinkingChunk = (c) => process.stderr.write(chalk.dim(c));
+        const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {}, opts);
         fullReply = reply;
         if (thinking) {
           pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
         }
       } else {
         let toolCallCount = 0;
-        let lastResponseContent: string | null = null;
 
         while (toolCallCount < maxToolCalls) {
-          const response = await chatWithToolsFactory.call(provider, messages, toolDefs, { timeout, verbose });
-          const choice = response.choices[0];
-          const assistantMessage = choice.message;
+          const toolOpts: { timeout?: number; verbose?: boolean } = { verbose };
+          if (timeout !== undefined) toolOpts.timeout = timeout;
+          const streamResult = await chatWithToolsFactory.call(provider, messages, toolDefs, () => {}, toolOpts);
 
           if (verbose) {
-            process.stderr.write(`[DEBUG] chatWithTools 响应 tool_calls: ${JSON.stringify(assistantMessage.tool_calls ?? null)}\n`);
-            process.stderr.write(`[DEBUG] chatWithTools 响应 content: ${assistantMessage.content ?? '(空)'}\n`);
+            process.stderr.write(`[DEBUG] streamChatWithTools toolCalls: ${JSON.stringify(streamResult.toolCalls)}\n`);
+            process.stderr.write(`[DEBUG] streamChatWithTools reply length: ${streamResult.reply.length}\n`);
           }
 
-          if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+          if (streamResult.toolCalls && streamResult.toolCalls.length > 0) {
             toolCallCount++;
-            lastResponseContent = assistantMessage.content ?? '';
             if (verbose) {
-              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${assistantMessage.tool_calls.map(c => c.function.name).join(', ')}
-`);
+              process.stderr.write(`[DEBUG] 第 ${toolCallCount} 次工具调用: ${streamResult.toolCalls.map(c => c.function.name).join(', ')}\n`);
             }
 
             const assistantToolMsg: ChatMessage = {
               role: 'assistant',
-              content: assistantMessage.content ?? '',
-              tool_calls: assistantMessage.tool_calls
+              content: '',
+              tool_calls: streamResult.toolCalls,
             };
             messages.push(assistantToolMsg);
             const now = new Date().toISOString();
             const assistantPendingMsg: Message = {
               role: 'assistant',
-              content: assistantMessage.content ?? '',
+              content: '',
               timestamp: now,
-              tool_calls: assistantMessage.tool_calls,
+              tool_calls: streamResult.toolCalls,
             };
-            if (response.usage) {
-              assistantPendingMsg.usage = {
-                prompt_tokens: response.usage.prompt_tokens,
-                completion_tokens: response.usage.completion_tokens,
-                total_tokens: response.usage.total_tokens,
-              };
-              lastUsage = assistantPendingMsg.usage;
-            }
             pendingMessages.push(assistantPendingMsg);
 
-            for (const toolCall of assistantMessage.tool_calls) {
+            for (const toolCall of streamResult.toolCalls) {
               const toolName = toolCall.function.name;
               let result: string;
               let argsObject: Record<string, unknown> = {};
@@ -249,7 +240,11 @@ export const askCommand: Command = {
               }
               try {
                 printToolThinking(toolName);
-                result = await executorFactory.execute(toolName, argsObject);
+                const startTime = Date.now();
+                const unifiedTool = tools.find(t => t.name === toolName);
+                if (!unifiedTool) throw new Error(`未知工具: ${toolName}`);
+                result = await executorFactory.execute(unifiedTool, argsObject);
+                process.stderr.write(chalk.dim(`  ✓ 完成 (${Date.now() - startTime}ms)\n`));
               } catch (e) {
                 result = `工具 "${toolName}" 执行失败: ${(e as Error).message}`;
               }
@@ -260,7 +255,7 @@ export const askCommand: Command = {
               messages.push({
                 role: 'tool',
                 tool_call_id: toolCall.id,
-                content: result
+                content: result,
               });
               pendingMessages.push({
                 role: 'tool',
@@ -270,38 +265,15 @@ export const askCommand: Command = {
               });
             }
           } else {
-            lastResponseContent = assistantMessage.content ?? '';
-
-            if (toolCallCount === 0) {
-              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
-              }, {
-                timeout, verbose,
-                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
-              });
-              fullReply = reply;
-              if (thinking) {
-                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
-              }
-            } else {
-              messages.push({
-                role: 'assistant',
-                content: assistantMessage.content ?? ''
-              });
-              const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {
-              }, {
-                timeout, verbose,
-                onThinkingChunk: verbose ? (c) => process.stderr.write(chalk.dim(c)) : undefined,
-              });
-              fullReply = reply;
-              if (thinking) {
-                pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
-              }
+            fullReply = streamResult.reply;
+            if (streamResult.thinking) {
+              pendingMessages.push({ role: 'thinking', content: streamResult.thinking, timestamp: new Date().toISOString() });
             }
             break;
           }
 
           if (toolCallCount >= maxToolCalls) {
-            fullReply = lastResponseContent ?? '';
+            fullReply = streamResult.reply;
             break;
           }
         }
@@ -329,9 +301,6 @@ export const askCommand: Command = {
       session.messages.push(m);
     }
     const assistantMsg: Message = { role: 'assistant', content: fullReply, timestamp: now };
-    if (lastUsage) {
-      assistantMsg.usage = lastUsage;
-    }
     session.messages.push(assistantMsg);
     await storeFactory.updateSession(session);
     await storeFactory.setActiveSessionId(session.id);

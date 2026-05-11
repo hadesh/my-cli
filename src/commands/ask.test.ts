@@ -1,8 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { askCommand, streamChatFactory, storeFactory, toolsStoreFactory, chatWithToolsFactory, executorFactory } from './ask.js';
 import { CLIError, UsageError, LLMError } from '../errors/base.js';
-import { loadConfig } from '../config/loader.js';
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { LLMProvider } from '../types/llm.js';
 import type { Session } from '../types/session.js';
@@ -70,7 +69,7 @@ describe('askCommand', () => {
     );
 
     // mock streamChat
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], onChunk: (content: string) => void) => {
       onChunk('Hello');
       return { reply: 'Hello', thinking: '' };
     };
@@ -118,7 +117,7 @@ describe('askCommand', () => {
     writeFileSync(sessionPath, JSON.stringify(existingSession, null, 2));
 
     // mock streamChat
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], onChunk: (content: string) => void) => {
       onChunk('New answer');
       return { reply: 'New answer', thinking: '' };
     };
@@ -178,8 +177,8 @@ describe('askCommand', () => {
 
     // mock streamChat，捕获传入的 messages
     let capturedMessages: any[] = [];
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
-      capturedMessages = messages;
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], onChunk: (content: string) => void) => {
+      capturedMessages = _messages;
       onChunk('Hello');
       return { reply: 'Hello', thinking: '' };
     };
@@ -208,8 +207,8 @@ describe('askCommand', () => {
 
     // mock streamChat，捕获传入的 messages
     let capturedMessages: any[] = [];
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
-      capturedMessages = messages;
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], onChunk: (content: string) => void) => {
+      capturedMessages = _messages;
       onChunk('Hello');
       return { reply: 'Hello', thinking: '' };
     };
@@ -262,8 +261,8 @@ describe('askCommand', () => {
 
     // mock streamChat，捕获 messages
     let capturedMessages: any[] = [];
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
-      capturedMessages = messages;
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], onChunk: (content: string) => void) => {
+      capturedMessages = _messages;
       onChunk('Hello');
       return { reply: 'Hello', thinking: '' };
     };
@@ -288,7 +287,7 @@ describe('askCommand', () => {
     );
 
     // mock streamChat 抛出 LLMError
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], _onChunk: (content: string) => void) => {
       throw new LLMError('LLM API 错误: HTTP 500');
     };
     // mock getOrCreateActiveSession 返回内存对象（不写文件）
@@ -329,10 +328,10 @@ describe('askCommand', () => {
     );
 
     // mock loadTools 返回空数组
-    toolsStoreFactory.loadTools = () => [];
+    toolsStoreFactory.loadTools = async () => [];
 
     let streamChatCalled = false;
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
+    streamChatFactory.call = async (_provider: LLMProvider, _messages: any[], _onChunk: (content: string) => void) => {
       streamChatCalled = true;
       return { reply: 'Hello without tools', thinking: '' };
     };
@@ -363,30 +362,26 @@ describe('askCommand', () => {
     );
 
     // mock 返回有工具但工具未调用
-    toolsStoreFactory.loadTools = () => [{
+    toolsStoreFactory.loadTools = async () => [{
       name: 'get_weather',
       description: '获取天气',
-      enabled: true,
-      command: 'echo {{location}}',
+      source: 'builtin' as const,
       parameters: { type: 'object', properties: { location: { type: 'string', description: '城市' } }, required: ['location'] }
     }];
 
-    // mock chatWithTools 返回无 tool_calls
     chatWithToolsFactory.call = async () => ({
-      choices: [{ message: { role: 'assistant', content: '直接回答' }, finish_reason: 'stop' }]
+      reply: '直接回答',
+      thinking: '',
+      toolCalls: null,
     });
-
-    let streamChatCalled = false;
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
-      streamChatCalled = true;
-      onChunk('Stream reply');
-      return { reply: 'Stream reply', thinking: '' };
-    };
 
     const config = { contextWindow: 20 } as Config;
     await askCommand.execute(config, {}, ['Hello']);
 
-    expect(streamChatCalled).toBe(true);
+    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const files = readdirSync(sessionsDir);
+    const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
+    expect(session.messages[1].content).toBe('直接回答');
   });
 
   // FC 测试 3：有工具、LLM 返回 tool_calls、执行后第二轮返回正常回复
@@ -401,11 +396,10 @@ describe('askCommand', () => {
     );
 
     // mock 返回有工具
-    toolsStoreFactory.loadTools = () => [{
+    toolsStoreFactory.loadTools = async () => [{
       name: 'get_weather',
       description: '获取天气',
-      enabled: true,
-      command: 'echo {{location}}',
+      source: 'builtin' as const,
       parameters: { type: 'object', properties: { location: { type: 'string', description: '城市' } }, required: ['location'] }
     }];
 
@@ -413,42 +407,26 @@ describe('askCommand', () => {
     chatWithToolsFactory.call = async () => {
       chatWithToolsCallCount++;
       if (chatWithToolsCallCount === 1) {
-        // 第一次返回有 tool_calls
         return {
-          choices: [{
-            message: {
-              role: 'assistant',
-              content: null,
-              tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"location":"Beijing"}' } }]
-            },
-            finish_reason: 'tool_calls'
-          }]
+          reply: '',
+          thinking: '',
+          toolCalls: [{ id: 'call_1', type: 'function' as const, function: { name: 'get_weather', arguments: '{"location":"Beijing"}' } }],
         };
       } else {
-        // 第二次返回无 tool_calls
         return {
-          choices: [{ message: { role: 'assistant', content: '北京天气晴朗' }, finish_reason: 'stop' }]
+          reply: '北京天气晴朗',
+          thinking: '',
+          toolCalls: null,
         };
       }
     };
 
-    // mock 执行器
     executorFactory.execute = async () => '晴天 25°C';
-
-    let streamChatCalled = false;
-    streamChatFactory.call = async (provider: LLMProvider, messages: any[], onChunk: (content: string) => void) => {
-      streamChatCalled = true;
-      onChunk('北京天气晴朗');
-      return { reply: '北京天气晴朗', thinking: '' };
-    };
 
     const config = { contextWindow: 20 } as Config;
     await askCommand.execute(config, {}, ['北京天气怎么样']);
 
-    // chatWithTools 应该被调用两次
     expect(chatWithToolsCallCount).toBe(2);
-    // streamChat 应该被调用一次（最后一轮）
-    expect(streamChatCalled).toBe(true);
 
     // 验证 session 保存了完整链路：user + assistant(tool_calls) + tool + assistant(final)
     const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
