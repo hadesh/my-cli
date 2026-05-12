@@ -9,7 +9,7 @@ import type { Config } from '../config/schema.js';
 
 describe('askCommand', () => {
   let tmpDir: string;
-  let originalHome: string | undefined;
+  let originalConfigDir: string | undefined;
   let originalStreamChat: typeof streamChatFactory.call;
   let originalGetSession: typeof storeFactory.getSession;
   let originalGetOrCreateActiveSession: typeof storeFactory.getOrCreateActiveSession;
@@ -20,10 +20,10 @@ describe('askCommand', () => {
   let originalExecutorExecute: typeof executorFactory.execute;
 
   beforeEach(() => {
+    originalConfigDir = process.env.MY_CLI_CONFIG_DIR;
     tmpDir = `/tmp/my-cli-test-ask-${Math.random().toString(36).slice(2, 6)}`;
     mkdirSync(tmpDir, { recursive: true });
-    process.env.HOME = tmpDir;
-    originalHome = process.env.HOME;
+    process.env.MY_CLI_CONFIG_DIR = tmpDir;
 
     originalStreamChat = streamChatFactory.call;
     originalGetSession = storeFactory.getSession;
@@ -34,16 +34,16 @@ describe('askCommand', () => {
     originalChatWithTools = chatWithToolsFactory.call;
     originalExecutorExecute = executorFactory.execute;
 
-    mkdirSync(join(tmpDir, '.config', 'my-cli', 'sessions'), { recursive: true });
+    mkdirSync(join(tmpDir, 'sessions'), { recursive: true });
 
     toolsStoreFactory.loadTools = async () => [];
   });
 
   afterEach(() => {
-    if (originalHome !== undefined) {
-      process.env.HOME = originalHome;
+    if (originalConfigDir !== undefined) {
+      process.env.MY_CLI_CONFIG_DIR = originalConfigDir;
     } else {
-      delete process.env.HOME;
+      delete process.env.MY_CLI_CONFIG_DIR;
     }
     streamChatFactory.call = originalStreamChat;
     storeFactory.getSession = originalGetSession;
@@ -61,7 +61,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -78,7 +78,7 @@ describe('askCommand', () => {
     await askCommand.execute(config, {}, ['What is TypeScript?']);
 
     // 验证 session 文件存在且包含消息
-    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const sessionsDir = join(tmpDir, 'sessions');
     const files = readdirSync(sessionsDir);
     expect(files.length).toBe(1);
     const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
@@ -94,7 +94,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -103,7 +103,7 @@ describe('askCommand', () => {
 
     // 创建一个 session
     const sessionId = '20260410-123456-test';
-    const sessionPath = join(tmpDir, '.config', 'my-cli', 'sessions', `${sessionId}.json`);
+    const sessionPath = join(tmpDir, 'sessions', `${sessionId}.json`);
     const existingSession: Session = {
       id: sessionId,
       name: 'Test Session',
@@ -139,7 +139,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -166,7 +166,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -195,7 +195,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -203,7 +203,7 @@ describe('askCommand', () => {
     );
 
     // 写入 agent.md
-    writeFileSync(join(tmpDir, '.config', 'my-cli', 'agent.md'), 'You are helpful.');
+    writeFileSync(join(tmpDir, 'agent.md'), 'You are helpful.');
 
     // mock streamChat，捕获传入的 messages
     let capturedMessages: any[] = [];
@@ -226,7 +226,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -235,7 +235,7 @@ describe('askCommand', () => {
 
     // 创建一个有 25 条消息的 session
     const sessionId = '20260410-123456-test';
-    const sessionPath = join(tmpDir, '.config', 'my-cli', 'sessions', `${sessionId}.json`);
+    const sessionPath = join(tmpDir, 'sessions', `${sessionId}.json`);
     const messages: any[] = [];
     for (let i = 0; i < 25; i++) {
       messages.push({
@@ -279,7 +279,7 @@ describe('askCommand', () => {
     // 写入 llm-providers.json
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -308,7 +308,7 @@ describe('askCommand', () => {
     await askCommand.execute(config, {}, ['Hello']);
 
     // 验证 sessions 目录中没有文件
-    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const sessionsDir = join(tmpDir, 'sessions');
     const files = readdirSync(sessionsDir);
     expect(files.length).toBe(0);
 
@@ -320,7 +320,7 @@ describe('askCommand', () => {
   test('ask without tools uses streamChat path', async () => {
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -342,7 +342,7 @@ describe('askCommand', () => {
     expect(streamChatCalled).toBe(true);
 
     // 验证 session 保存了消息
-    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const sessionsDir = join(tmpDir, 'sessions');
     const files = readdirSync(sessionsDir);
     expect(files.length).toBe(1);
     const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
@@ -354,7 +354,7 @@ describe('askCommand', () => {
   test('ask with tools but LLM returns no tool_calls uses streamChat', async () => {
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -378,7 +378,7 @@ describe('askCommand', () => {
     const config = { contextWindow: 20 } as Config;
     await askCommand.execute(config, {}, ['Hello']);
 
-    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const sessionsDir = join(tmpDir, 'sessions');
     const files = readdirSync(sessionsDir);
     const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
     expect(session.messages[1].content).toBe('直接回答');
@@ -388,7 +388,7 @@ describe('askCommand', () => {
   test('ask with tools and tool_calls executes tool and continues', async () => {
     mkdirSync(join(tmpDir, '.config', 'my-cli'), { recursive: true });
     writeFileSync(
-      join(tmpDir, '.config', 'my-cli', 'llm-providers.json'),
+      join(tmpDir, 'llm-providers.json'),
       JSON.stringify({
         providers: [{ name: 'test', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4' }],
         defaultProvider: 'test',
@@ -429,7 +429,7 @@ describe('askCommand', () => {
     expect(chatWithToolsCallCount).toBe(2);
 
     // 验证 session 保存了完整链路：user + assistant(tool_calls) + tool + assistant(final)
-    const sessionsDir = join(tmpDir, '.config', 'my-cli', 'sessions');
+    const sessionsDir = join(tmpDir, 'sessions');
     const files = readdirSync(sessionsDir);
     const session = JSON.parse(readFileSync(join(sessionsDir, files[0]), 'utf-8'));
     expect(session.messages).toHaveLength(4);

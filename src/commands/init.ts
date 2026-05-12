@@ -1,18 +1,11 @@
 import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
-import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import * as readline from 'node:readline';
+import { getAgentMdFile } from '../config/paths.js';
 
-/**
- * 动态获取 agent.md 文件路径
- * 使用 process.env.HOME 以支持测试环境隔离
- */
-export function getAgentMdFile(): string {
-  const home = process.env.HOME ?? homedir();
-  return join(home, '.config', 'my-cli', 'agent.md');
-}
+export { getAgentMdFile };
 
 export function ask(rl: readline.Interface, question: string): Promise<string> {
   return new Promise((resolve) => {

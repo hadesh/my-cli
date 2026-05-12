@@ -1,14 +1,9 @@
 import { mkdirSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { Session } from '../types/session.js';
 import { loadConfig, saveConfig } from '../config/loader.js';
 import { CLIError } from '../errors/base.js';
-
-function getSessionsDir(): string {
-  const home = process.env.HOME ?? homedir();
-  return join(home, '.config', 'my-cli', 'sessions');
-}
+import { getSessionsDir } from '../config/paths.js';
 
 /**
  * 生成 Session ID: YYYYMMDD-HHmmss-<4位随机字母数字>

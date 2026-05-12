@@ -11,14 +11,14 @@ describe('init 命令', () => {
   let tmpDir: string;
   let logs: string[];
   let originalConsoleLog: typeof console.log;
-  let originalHome: string | undefined;
+  let originalConfigDir: string | undefined;
   let originalReadlineCreate: () => readline.Interface;
 
   beforeEach(() => {
+    originalConfigDir = process.env.MY_CLI_CONFIG_DIR;
     const randomSuffix = Math.random().toString(36).slice(2, 6);
     tmpDir = `/tmp/my-cli-test-init-${randomSuffix}`;
-    process.env.HOME = tmpDir;
-    originalHome = process.env.HOME;
+    process.env.MY_CLI_CONFIG_DIR = tmpDir;
 
     logs = [];
     originalConsoleLog = console.log;
@@ -32,10 +32,10 @@ describe('init 命令', () => {
   afterEach(() => {
     console.log = originalConsoleLog;
     readlineFactory.create = originalReadlineCreate;
-    if (originalHome !== undefined) {
-      process.env.HOME = originalHome;
+    if (originalConfigDir !== undefined) {
+      process.env.MY_CLI_CONFIG_DIR = originalConfigDir;
     } else {
-      delete process.env.HOME;
+      delete process.env.MY_CLI_CONFIG_DIR;
     }
   });
 
@@ -69,7 +69,7 @@ describe('init 命令', () => {
     const initCommand = await getInitCommand();
     await initCommand.execute(config, {}, []);
 
-    const agentMdFile = join(tmpDir, '.config', 'my-cli', 'agent.md');
+    const agentMdFile = join(tmpDir, 'agent.md');
     expect(existsSync(agentMdFile)).toBe(true);
 
     const content = readFileSync(agentMdFile, 'utf-8');
@@ -84,7 +84,7 @@ describe('init 命令', () => {
   test('已存在 + 选N不覆盖，文件内容不变', async () => {
     const config = loadConfig({ output: 'text' });
 
-    const agentMdFile = join(tmpDir, '.config', 'my-cli', 'agent.md');
+    const agentMdFile = join(tmpDir, 'agent.md');
     ensureDir(agentMdFile);
     writeFileSync(agentMdFile, '# Old Content\n\nOld agent profile.', 'utf-8');
 
@@ -102,7 +102,7 @@ describe('init 命令', () => {
   test('已存在 + 选y覆盖，文件内容已更新', async () => {
     const config = loadConfig({ output: 'text' });
 
-    const agentMdFile = join(tmpDir, '.config', 'my-cli', 'agent.md');
+    const agentMdFile = join(tmpDir, 'agent.md');
     ensureDir(agentMdFile);
     writeFileSync(agentMdFile, '# Old Content\n\nOld agent profile.', 'utf-8');
 
@@ -128,7 +128,7 @@ describe('init 命令', () => {
     const initCommand = await getInitCommand();
     await initCommand.execute(config, {}, []);
 
-    const agentMdFile = join(tmpDir, '.config', 'my-cli', 'agent.md');
+    const agentMdFile = join(tmpDir, 'agent.md');
     const content = readFileSync(agentMdFile, 'utf-8');
     expect(content).toContain('Assistant');
   });
@@ -141,15 +141,15 @@ describe('init 命令', () => {
     const initCommand = await getInitCommand();
     await initCommand.execute(config, {}, []);
 
-    const agentMdFile = join(tmpDir, '.config', 'my-cli', 'agent.md');
+    const agentMdFile = join(tmpDir, 'agent.md');
     const content = readFileSync(agentMdFile, 'utf-8');
     expect(content).not.toContain('## 注意事项');
   });
 
   test('getAgentMdFile 返回正确路径', () => {
-    process.env.HOME = '/test-home';
+    process.env.MY_CLI_CONFIG_DIR = '/test-config';
     const path = getAgentMdFile();
-    expect(path).toBe('/test-home/.config/my-cli/agent.md');
+    expect(path).toBe('/test-config/agent.md');
   });
 
   test('ask 函数正确包装 rl.question', async () => {

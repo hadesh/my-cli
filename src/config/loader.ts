@@ -1,12 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { configSchema, type Config } from './schema.js';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
-
-function getConfigDir(): string {
-  const home = process.env.HOME ?? homedir();
-  return join(home, '.config', 'my-cli');
-}
+import { getConfigDir } from './paths.js';
 
 function getConfigFile(): string {
   return join(getConfigDir(), 'config.json');

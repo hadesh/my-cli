@@ -9,13 +9,13 @@ describe('session 命令组', () => {
   let tmpDir: string;
   let logs: string[];
   let originalConsoleLog: typeof console.log;
-  let originalHome: string | undefined;
+  let originalConfigDir: string | undefined;
 
   beforeEach(() => {
+    originalConfigDir = process.env.MY_CLI_CONFIG_DIR;
     const randomSuffix = Math.random().toString(36).slice(2, 6);
     tmpDir = `/tmp/my-cli-test-session-cmd-${randomSuffix}`;
-    process.env.HOME = tmpDir;
-    originalHome = process.env.HOME;
+    process.env.MY_CLI_CONFIG_DIR = tmpDir;
 
     logs = [];
     originalConsoleLog = console.log;
@@ -26,10 +26,10 @@ describe('session 命令组', () => {
 
   afterEach(() => {
     console.log = originalConsoleLog;
-    if (originalHome !== undefined) {
-      process.env.HOME = originalHome;
+    if (originalConfigDir !== undefined) {
+      process.env.MY_CLI_CONFIG_DIR = originalConfigDir;
     } else {
-      delete process.env.HOME;
+      delete process.env.MY_CLI_CONFIG_DIR;
     }
   });
 
@@ -47,7 +47,7 @@ describe('session 命令组', () => {
     expect(id).toMatch(/^\d{8}-\d{6}-[a-z0-9]{4}$/);
     expect(log).toContain('my-chat');
 
-    const sessionFile = join(tmpDir, '.config', 'my-cli', 'sessions', `${id}.json`);
+    const sessionFile = join(tmpDir, 'sessions', `${id}.json`);
     expect(existsSync(sessionFile)).toBe(true);
   });
 
@@ -138,7 +138,7 @@ describe('session 命令组', () => {
     await sessionCommand.execute(config, {}, ['new', 'to-delete']);
     const id = logs[0].match(/已创建 session: (\d{8}-\d{6}-[a-z0-9]{4})/)![1];
 
-    const sessionFile = join(tmpDir, '.config', 'my-cli', 'sessions', `${id}.json`);
+    const sessionFile = join(tmpDir, 'sessions', `${id}.json`);
     expect(existsSync(sessionFile)).toBe(true);
 
     logs = [];

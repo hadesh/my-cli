@@ -2,10 +2,9 @@ import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
 import type { ChatMessage, LLMProvider, ContentPart, TextContentPart, ToolCall, ChatRole } from '../types/llm.js';
 import type { Message, Session } from '../types/session.js';
-import { homedir } from 'node:os';
 import { basename } from 'node:path';
-import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { getAgentMdFile } from '../config/paths.js';
 import chalk from 'chalk';
 import { UsageError } from '../errors/base.js';
 import { streamChat, streamChatWithTools } from '../llm/client.js';
@@ -90,13 +89,11 @@ export const askCommand: Command = {
       provider = await getDefaultProvider();
     }
     
-    // 读取 agent.md
-    const agentMdPath = join(process.env.HOME ?? homedir(), '.config', 'my-cli', 'agent.md');
     let agentMd = '';
     try {
-      agentMd = readFileSync(agentMdPath, 'utf-8');
+      agentMd = readFileSync(getAgentMdFile(), 'utf-8');
     } catch {
-      // 文件不存在，agentMd 保持空字符串
+      // 文件不存在
     }
     
     // 加载 session
@@ -183,13 +180,23 @@ export const askCommand: Command = {
       process.stdout.write('\n');
       freeEncoder();
 
+      let streamingStarted = false;
+      const onChunk = (content: string) => {
+        if (!streamingStarted) {
+          streamingStarted = true;
+          process.stderr.write('\x1b[2K\x1b[1A\x1b[2K\r');
+        }
+        process.stdout.write(content);
+        partialReply += content;
+      };
+
       process.stderr.write('思考中...\n');
 
       if (tools.length === 0) {
         const opts: { timeout?: number; verbose?: boolean; onThinkingChunk?: (content: string) => void } = { verbose };
         if (timeout !== undefined) opts.timeout = timeout;
         if (verbose) opts.onThinkingChunk = (c) => process.stderr.write(chalk.dim(c));
-        const { reply, thinking } = await streamChatFactory.call(provider, messages, () => {}, opts);
+        const { reply, thinking } = await streamChatFactory.call(provider, messages, onChunk, opts);
         fullReply = reply;
         if (thinking) {
           pendingMessages.push({ role: 'thinking', content: thinking, timestamp: new Date().toISOString() });
@@ -200,7 +207,8 @@ export const askCommand: Command = {
         while (toolCallCount < maxToolCalls) {
           const toolOpts: { timeout?: number; verbose?: boolean } = { verbose };
           if (timeout !== undefined) toolOpts.timeout = timeout;
-          const streamResult = await chatWithToolsFactory.call(provider, messages, toolDefs, () => {}, toolOpts);
+          streamingStarted = false;
+          const streamResult = await chatWithToolsFactory.call(provider, messages, toolDefs, onChunk, toolOpts);
 
           if (verbose) {
             process.stderr.write(`[DEBUG] streamChatWithTools toolCalls: ${JSON.stringify(streamResult.toolCalls)}\n`);
@@ -284,8 +292,12 @@ export const askCommand: Command = {
         }
       }
 
-      const rendered = renderMarkdown(fullReply);
-      process.stdout.write(rendered + '\n');
+      if (streamingStarted) {
+        process.stdout.write('\n');
+      } else {
+        const rendered = renderMarkdown(fullReply);
+        process.stdout.write(rendered + '\n');
+      }
     } catch (e) {
       if (verbose) {
         process.stderr.write(`[DEBUG] Error details: ${(e as Error).stack}\n`);

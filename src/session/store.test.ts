@@ -13,22 +13,23 @@ import {
 } from './store.js';
 import { CLIError } from '../errors/base.js';
 
-const originalHome = process.env.HOME;
-
 let tmpDir: string;
+let originalConfigDir: string | undefined;
 
 beforeEach(() => {
+  originalConfigDir = process.env.MY_CLI_CONFIG_DIR;
   tmpDir = `/tmp/my-cli-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   mkdirSync(tmpDir, { recursive: true });
-  process.env.HOME = tmpDir;
-  
-  const configDir = join(tmpDir, '.config', 'my-cli');
-  mkdirSync(configDir, { recursive: true });
-  mkdirSync(join(configDir, 'sessions'), { recursive: true });
+  process.env.MY_CLI_CONFIG_DIR = tmpDir;
+  mkdirSync(join(tmpDir, 'sessions'), { recursive: true });
 });
 
 afterEach(() => {
-  process.env.HOME = originalHome;
+  if (originalConfigDir !== undefined) {
+    process.env.MY_CLI_CONFIG_DIR = originalConfigDir;
+  } else {
+    delete process.env.MY_CLI_CONFIG_DIR;
+  }
   rmSync(tmpDir, { recursive: true, force: true });
 });
 

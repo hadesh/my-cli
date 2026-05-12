@@ -4,6 +4,12 @@ import { loadConfig, saveConfig } from '../config/loader.js';
 import { UsageError } from '../errors/base.js';
 import { getAllBuiltinDefs } from '../tools/store.js';
 
+export const toolsFactory = {
+  getAllBuiltinDefs,
+  loadConfig,
+  saveConfig,
+};
+
 export const toolsCommand: Command = {
   name: 'tools',
   description: '管理内置工具配置',
@@ -46,7 +52,7 @@ export const toolsCommand: Command = {
 
 async function handleList(config: Config): Promise<void> {
   const builtinTools = config.builtinTools ?? {};
-  const defs = getAllBuiltinDefs();
+  const defs = toolsFactory.getAllBuiltinDefs();
 
   if (defs.length === 0) {
     process.stdout.write('暂无内置工具\n');
@@ -61,25 +67,25 @@ async function handleList(config: Config): Promise<void> {
 }
 
 async function handleEnable(name: string): Promise<void> {
-  const defs = getAllBuiltinDefs();
+  const defs = toolsFactory.getAllBuiltinDefs();
   if (!defs.some(d => d.name === name)) {
     process.stderr.write(`错误: 未知工具 "${name}"\n`);
     return;
   }
-  const config = loadConfig();
+  const config = toolsFactory.loadConfig();
   const builtinTools = { ...(config.builtinTools ?? {}), [name]: true };
-  await saveConfig({ builtinTools });
+  await toolsFactory.saveConfig({ builtinTools });
   process.stdout.write(`工具 "${name}" 已启用\n`);
 }
 
 async function handleDisable(name: string): Promise<void> {
-  const defs = getAllBuiltinDefs();
+  const defs = toolsFactory.getAllBuiltinDefs();
   if (!defs.some(d => d.name === name)) {
     process.stderr.write(`错误: 未知工具 "${name}"\n`);
     return;
   }
-  const config = loadConfig();
+  const config = toolsFactory.loadConfig();
   const builtinTools = { ...(config.builtinTools ?? {}), [name]: false };
-  await saveConfig({ builtinTools });
+  await toolsFactory.saveConfig({ builtinTools });
   process.stdout.write(`工具 "${name}" 已禁用\n`);
 }

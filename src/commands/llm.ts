@@ -7,6 +7,7 @@ import {
   addProvider,
   listProviders,
   setProviderModel,
+  setDefaultProvider,
   loadLLMConfig,
   getProviderModels,
   getModelInfo,
@@ -101,6 +102,7 @@ async function handleList(config: Config): Promise<void> {
 
 async function handleUse(providerName: string, modelId: string): Promise<void> {
   await setProviderModel(providerName, modelId);
+  await setDefaultProvider(providerName);
   console.log(`已将 provider ${providerName} 的默认模型设为 ${modelId}`);
 }
 

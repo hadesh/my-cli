@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MCPServersConfig, MCPServerConfig } from './types.js';
-import { MCP_SERVERS_FILE } from '../config/paths.js';
+import { getMCPServersFile } from '../config/paths.js';
 import { UsageError } from '../errors/base.js';
 
 /**
@@ -10,7 +10,7 @@ import { UsageError } from '../errors/base.js';
  */
 export async function loadMCPServers(): Promise<MCPServersConfig> {
   try {
-    const file = Bun.file(MCP_SERVERS_FILE);
+    const file = Bun.file(getMCPServersFile());
     const content = await file.json();
     return content as MCPServersConfig;
   } catch {
@@ -23,12 +23,12 @@ export async function loadMCPServers(): Promise<MCPServersConfig> {
  * 保存 MCP servers 配置
  */
 export async function saveMCPServers(config: MCPServersConfig): Promise<void> {
-  const dir = join(MCP_SERVERS_FILE, '..');
+  const dir = join(getMCPServersFile(), '..');
   
   // 确保父目录存在
   mkdirSync(dir, { recursive: true });
   
-  await Bun.write(MCP_SERVERS_FILE, JSON.stringify(config, null, 2));
+  await Bun.write(getMCPServersFile(), JSON.stringify(config, null, 2));
 }
 
 /**

@@ -1,16 +1,8 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { LLMConfig, LLMProvider } from '../types/llm.js';
 import { UsageError } from '../errors/base.js';
-
-/**
- * 获取 LLM 配置文件路径（支持测试隔离）
- */
-function getLLMConfigFile(): string {
-  const home = process.env.HOME ?? homedir();
-  return join(home, '.config', 'my-cli', 'llm-providers.json');
-}
+import { getLLMConfigFile } from '../config/paths.js';
 
 /**
  * 加载 LLM 配置

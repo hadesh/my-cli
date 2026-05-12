@@ -14,20 +14,20 @@ import { join } from 'node:path';
 
 describe('llm/config', () => {
   let tmpDir: string;
-  let originalHome: string | undefined;
+  let originalConfigDir: string | undefined;
 
   beforeEach(() => {
+    originalConfigDir = process.env.MY_CLI_CONFIG_DIR;
     const randomSuffix = Math.random().toString(36).slice(2, 6);
     tmpDir = `/tmp/my-cli-test-llm-config-${randomSuffix}`;
-    process.env.HOME = tmpDir;
-    originalHome = process.env.HOME;
+    process.env.MY_CLI_CONFIG_DIR = tmpDir;
   });
 
   afterEach(() => {
-    if (originalHome !== undefined) {
-      process.env.HOME = originalHome;
+    if (originalConfigDir !== undefined) {
+      process.env.MY_CLI_CONFIG_DIR = originalConfigDir;
     } else {
-      delete process.env.HOME;
+      delete process.env.MY_CLI_CONFIG_DIR;
     }
   });
 
@@ -134,7 +134,7 @@ describe('llm/config', () => {
     expect(defaultProvider.name).toBe('deepseek');
 
     // 验证配置文件写入正确
-    const configFile = join(tmpDir, '.config', 'my-cli', 'llm-providers.json');
+    const configFile = join(tmpDir, 'llm-providers.json');
     expect(existsSync(configFile)).toBe(true);
   });
 });
