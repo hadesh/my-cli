@@ -62,9 +62,10 @@ describe('llm 命令组', () => {
     await addProvider(provider2);
 
     logs = [];
-    await llmCommand.execute(config, {}, ['use', 'openai']);
+    await llmCommand.execute(config, {}, ['use', 'openai', 'gpt-4']);
 
-    expect(logs[0]).toContain('已将 openai 设为默认 provider');
+    expect(logs[0]).toContain('已将 provider openai');
+    expect(logs[0]).toContain('gpt-4');
   });
 
   test('llm use <不存在的name> 抛出 UsageError', async () => {
@@ -129,7 +130,7 @@ describe('llm 命令组', () => {
     await addProvider(provider2);
 
     logs = [];
-    await llmCommand.execute(config, {}, ['use', 'openai']);
+    await llmCommand.execute(config, {}, ['use', 'openai', 'gpt-4']);
     logs = [];
     await llmCommand.execute(config, {}, ['list']);
 

@@ -28,7 +28,7 @@ function printToolThinking(toolName: string): void {
   } else {
     label = chalk.dim(`▸ 调用工具 [${toolName}]`);
   }
-  process.stdout.write(label + '\n');
+  process.stderr.write(label + '\n');
 }
 
 export const streamChatFactory = {
@@ -234,7 +234,10 @@ export const askCommand: Command = {
               let argsObject: Record<string, unknown> = {};
               try {
                 argsObject = JSON.parse(toolCall.function.arguments);
-              } catch {
+              } catch (e) {
+                if (verbose) {
+                  process.stderr.write(`[DEBUG] 工具 "${toolName}" 参数 JSON 解析失败: ${(e as Error).message}\n`);
+                }
                 argsObject = {};
               }
               if (verbose) {

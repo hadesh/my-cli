@@ -2,9 +2,7 @@ import type { Command } from '../command.js';
 import type { Config } from '../config/schema.js';
 import { loadConfig, saveConfig } from '../config/loader.js';
 import { UsageError } from '../errors/base.js';
-
-// 内置工具定义（硬编码，Task 7 的 store.ts 重构后会改为从 store 导入）
-const BUILTIN_TOOL_NAMES = ['weather'];
+import { getAllBuiltinDefs } from '../tools/store.js';
 
 export const toolsCommand: Command = {
   name: 'tools',
@@ -48,22 +46,23 @@ export const toolsCommand: Command = {
 
 async function handleList(config: Config): Promise<void> {
   const builtinTools = config.builtinTools ?? {};
+  const defs = getAllBuiltinDefs();
 
-  if (BUILTIN_TOOL_NAMES.length === 0) {
+  if (defs.length === 0) {
     process.stdout.write('暂无内置工具\n');
     return;
   }
 
-  for (const name of BUILTIN_TOOL_NAMES) {
-    // 默认 enabled（未在 config 中显式设置为 false 时视为启用）
-    const enabled = builtinTools[name] !== false;
+  for (const def of defs) {
+    const enabled = builtinTools[def.name] !== false;
     const status = enabled ? 'enabled' : 'disabled';
-    process.stdout.write(`[${status}] [builtin] ${name}\n`);
+    process.stdout.write(`[${status}] [builtin] ${def.name}: ${def.description}\n`);
   }
 }
 
 async function handleEnable(name: string): Promise<void> {
-  if (!BUILTIN_TOOL_NAMES.includes(name)) {
+  const defs = getAllBuiltinDefs();
+  if (!defs.some(d => d.name === name)) {
     process.stderr.write(`错误: 未知工具 "${name}"\n`);
     return;
   }
@@ -74,7 +73,8 @@ async function handleEnable(name: string): Promise<void> {
 }
 
 async function handleDisable(name: string): Promise<void> {
-  if (!BUILTIN_TOOL_NAMES.includes(name)) {
+  const defs = getAllBuiltinDefs();
+  if (!defs.some(d => d.name === name)) {
     process.stderr.write(`错误: 未知工具 "${name}"\n`);
     return;
   }
