@@ -138,3 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .DS_Store
+
+# Sisyphus 临时验证产物
+.sisyphus/evidence/
